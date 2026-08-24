@@ -1989,10 +1989,18 @@ const MAPS=(()=>{
   }
   let engine='loading';                 // loading | arcgis | raster
   const waiters=[]; const diag=[];
-  let wdView=null;
+  let wdView=null, wdArmado=false;
 
   function note(kind,msg){diag.push({t:new Date(),kind,msg});if(diag.length>40)diag.shift()}
   function clearWatchdogs(){if(wdView)clearTimeout(wdView);wdView=null}
+  /* O MapView do ArcGIS só inicializa depois que o contêiner está anexado ao
+     documento e tem dimensão. Contar o tempo antes disso mede a navegação do
+     operador, não a saúde do SDK. */
+  function armarWatchdog(){
+    if(wdArmado||ready||engine==='raster')return;
+    wdArmado=true;
+    wdView=setTimeout(()=>degrade('MapView não inicializou em 30 s com o contêiner já visível'),30000);
+  }
 
   /* ---------- degradação controlada ---------- */
   function degrade(reason){
@@ -2000,7 +2008,8 @@ const MAPS=(()=>{
     clearWatchdogs();
     engine='raster'; ready=false;
     note('degrade',reason);
-    LAYERS.forEach(l=>{if(l.url)LAYER_HEALTH[l.id]={status:'offline',ms:null,msg:'SDK indisponível — '+reason}});
+    LAYERS.forEach(l=>{if(l.url)LAYER_HEALTH[l.id]={status:'offline',ms:null,
+      msg:'não avaliada — o mapa passou para o motor raster ('+reason+')'}});
     BUS.emit('integration.sla.breached',{},
       {text:`ArcGIS Maps SDK indisponível (${esc(reason)}) — motor raster assumiu o mapa`,sev:'atencao',mod:'M17'});
     waiters.splice(0).forEach(f=>{try{f(null)}catch(e){}});
@@ -2104,7 +2113,6 @@ const MAPS=(()=>{
       ui:{components:['zoom','attribution']},
       popup:{dockEnabled:false,collapseEnabled:false,defaultPopupTemplateEnabled:true}});
 
-    wdView=setTimeout(()=>degrade('MapView não inicializou em 25 s'),25000);
     view.when(()=>{
       clearTimeout(wdView); wdView=null;
       ready=true; engine='arcgis';
@@ -2532,13 +2540,19 @@ const MAPS=(()=>{
   function mount(node,cfg){
     cfg=cfg||{}; cfgAtual=cfg; host=node;
     if(engine==='raster'){makeRaster(node,cfg);return}
-    if(!ready){
+    if(!viewHost){                       // módulos do SDK ainda não resolveram
       waiters.push(()=>{if(host===node)mount(node,cfg)});
-      node.innerHTML='<div class="maploading">Inicializando ArcGIS Maps SDK…</div>';
+      node.innerHTML='<div class="maploading">Carregando ArcGIS Maps SDK…</div>';
       return;
     }
     node.innerHTML='';
-    try{ node.appendChild(viewHost); }catch(e){ degrade('não foi possível anexar o MapView'); return; }
+    try{ node.appendChild(viewHost); }catch(e){ degrade('não foi possível anexar o contêiner do mapa'); return; }
+    armarWatchdog();
+    if(!ready){                          // contêiner já na página: o view termina de inicializar
+      node.appendChild(el('div',{class:'maploading'},'Inicializando mapa…'));
+      waiters.push(()=>{if(host===node)mount(node,cfg)});
+      return;
+    }
     applyVis(cfg.layers);
     try{ viewHost.style.cursor = tool==='identify'?'crosshair':'grab'; }catch(e){}
     if(cfg.center){try{view.goTo({center:cfg.center,zoom:cfg.zoom||9},{duration:600}).catch(()=>{})}catch(e){}}
@@ -2584,7 +2598,7 @@ const MAPS=(()=>{
   }
   function retry(){
     if(engine==='arcgis')return;
-    engine='loading';ready=false;sdk=null;view=null;map=null;L={};lastFrame=-1;viewHost=null;
+    engine='loading';ready=false;sdk=null;view=null;map=null;L={};lastFrame=-1;viewHost=null;wdArmado=false;
     note('sdk','recarregamento solicitado pelo operador');
     if(host)host.innerHTML='<div class="maploading">Recarregando ArcGIS Maps SDK…</div>';
     APP.rerender();
