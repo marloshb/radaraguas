@@ -8,6 +8,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link id="arcgis-css" rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
+<script>
+/* Precede qualquer carregamento do ArcGIS Maps SDK.
+   csp-restrictions faz o loader AMD evitar new Function()/eval, bloqueados por
+   CSP sem 'unsafe-eval' — condição comum em páginas publicadas e iframes. */
+window.dojoConfig={async:true,has:{'csp-restrictions':true,'dojo-firebug':false,'dojo-debug-messages':false}};
+</script>
 <style>
 /* ============================================================
    HIDROCLIMA BRASIL — design tokens
@@ -1424,16 +1430,21 @@ const CH=(()=>{
       if(opt.xgrid)s+=`<line x1="${x}" x2="${x}" y1="${P.t}" y2="${H-P.b}" stroke="#132330" stroke-width="1"/>`;});
     return s;
   }
-  function path(pts,xs,ys){return pts.map((p,i)=>(i?'L':'M')+xs(p[0]).toFixed(1)+' '+ys(p[1]).toFixed(1)).join(' ')}
-  function area(pts,xs,ys,base){return path(pts,xs,ys)+` L${xs(pts[pts.length-1][0]).toFixed(1)} ${ys(base).toFixed(1)} L${xs(pts[0][0]).toFixed(1)} ${ys(base).toFixed(1)} Z`}
+  function path(pts,xs,ys){if(!pts||!pts.length)return '';
+    return pts.map((p,i)=>(i?'L':'M')+xs(p[0]).toFixed(1)+' '+ys(p[1]).toFixed(1)).join(' ')}
+  function area(pts,xs,ys,base){if(!pts||!pts.length)return '';
+    return path(pts,xs,ys)+` L${xs(pts[pts.length-1][0]).toFixed(1)} ${ys(base).toFixed(1)} L${xs(pts[0][0]).toFixed(1)} ${ys(base).toFixed(1)} Z`}
+  function maxOf(arr,f,dflt){if(!arr||!arr.length)return dflt;
+    let m=-Infinity;arr.forEach(x=>{const v=f(x);if(isFinite(v)&&v>m)m=v});return isFinite(m)?m:dflt}
 
   /* Hidrograma com faixa de ensemble, hietograma invertido e limiares */
   function hydro(o){
     const W=o.w||600,H=o.h||220;
     const xs=scale(o.x0,o.x1,P.l,W-P.r);
-    const ymax=o.ymax||Math.max(...o.line.map(p=>p[1]))*1.18;
-    const ys=scale(0,ymax,H-P.b,P.t+(o.rain?52:0));
-    const yr=o.rain?scale(0,Math.max(...o.rain.map(p=>p[1]))*1.35||1,P.t+48,P.t):null;
+    const hasLine=!!(o.line&&o.line.length), hasRain=!!(o.rain&&o.rain.length);
+    const ymax=o.ymax||maxOf(o.line,p=>p[1],1)*1.18||1;
+    const ys=scale(0,ymax,H-P.b,P.t+(hasRain?52:0));
+    const yr=hasRain?scale(0,maxOf(o.rain,p=>p[1],1)*1.35||1,P.t+48,P.t):null;
     const yt=[];for(let i=0;i<=4;i++)yt.push(ymax*i/4);
     const xt=[];for(let i=o.x0;i<=o.x1;i+=(o.xstep||12))xt.push({v:i,l:(o.xlab?o.xlab(i):i+'h')});
     let s=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
@@ -1442,18 +1453,19 @@ const CH=(()=>{
       <linearGradient id="gE" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#9D7BFF" stop-opacity=".26"/><stop offset="100%" stop-color="#9D7BFF" stop-opacity=".05"/></linearGradient></defs>`;
     s+=axis(W,H,xs,ys,xt,yt,{yd:o.yd==null?1:o.yd,xgrid:true});
-    if(o.band){const up=o.band.map(p=>[p[0],p[2]]),lo=o.band.map(p=>[p[0],p[1]]).reverse();
+    if(o.band&&o.band.length){const up=o.band.map(p=>[p[0],p[2]]),lo=o.band.map(p=>[p[0],p[1]]).reverse();
       s+=`<path d="${path(up,xs,ys)} ${lo.map((p,i)=>'L'+xs(p[0]).toFixed(1)+' '+ys(p[1]).toFixed(1)).join(' ')} Z" fill="url(#gE)" stroke="#9D7BFF" stroke-width=".7" stroke-opacity=".55"/>`;}
     (o.thresholds||[]).forEach(t=>{const y=ys(t.v);
       s+=`<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="${t.c}" stroke-width="1" stroke-dasharray="4 3" opacity=".85"/>`;
       s+=`<text x="${W-P.r-2}" y="${y-3}" text-anchor="end" font-size="8.5" fill="${t.c}" font-family="Barlow Condensed" letter-spacing="1">${esc(t.l)}</text>`;});
-    if(o.rain){const bw=Math.max(1.2,(W-P.l-P.r)/o.rain.length-1);
+    if(hasRain){const bw=Math.max(1.2,(W-P.l-P.r)/o.rain.length-1);
       o.rain.forEach(p=>{const h=Math.max(0,P.t+48-yr(p[1]));
         s+=`<rect x="${(xs(p[0])-bw/2).toFixed(1)}" y="${yr(p[1]).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="#35B8F0" opacity=".55"/>`;});
       s+=`<text x="${P.l+2}" y="${P.t+9}" font-size="8.5" fill="#35B8F0" font-family="Barlow Condensed" letter-spacing="1.4">CHUVA AREAL mm/h</text>`;}
-    if(o.pred)s+=`<path d="${path(o.pred,xs,ys)}" fill="none" stroke="#9D7BFF" stroke-width="1.6" stroke-dasharray="5 3"/>`;
-    if(o.line){s+=`<path d="${area(o.line,xs,ys,0)}" fill="url(#gH)"/>`;
+    if(o.pred&&o.pred.length)s+=`<path d="${path(o.pred,xs,ys)}" fill="none" stroke="#9D7BFF" stroke-width="1.6" stroke-dasharray="5 3"/>`;
+    if(hasLine){s+=`<path d="${area(o.line,xs,ys,0)}" fill="url(#gH)"/>`;
       s+=`<path d="${path(o.line,xs,ys)}" fill="none" stroke="#19D3E8" stroke-width="2"/>`;}
+    else s+=`<text x="${W/2}" y="${(H)/2}" text-anchor="middle" font-size="10" fill="#4E6673" font-family="Barlow Condensed" letter-spacing="1.6">SEM DADOS NA JANELA SELECIONADA</text>`;
     if(o.now!=null){const x=xs(o.now);
       s+=`<line x1="${x}" x2="${x}" y1="${P.t}" y2="${H-P.b}" stroke="#fff" stroke-width="1" opacity=".55"/>`;
       s+=`<circle cx="${x}" cy="${P.t+3}" r="2.6" fill="#fff"/>`;}
@@ -1465,15 +1477,18 @@ const CH=(()=>{
 
   function lines(o){
     const W=o.w||480,H=o.h||180;
-    const all=o.series.flatMap(s=>s.pts);
-    const x0=o.x0!=null?o.x0:Math.min(...all.map(p=>p[0])), x1=o.x1!=null?o.x1:Math.max(...all.map(p=>p[0]));
-    const y0=o.y0!=null?o.y0:Math.min(0,...all.map(p=>p[1])), y1=o.y1!=null?o.y1:Math.max(...all.map(p=>p[1]))*1.12||1;
+    const series=(o.series||[]).filter(s=>s&&s.pts&&s.pts.length);
+    const all=series.flatMap(s=>s.pts);
+    const x0=o.x0!=null?o.x0:(all.length?Math.min(...all.map(p=>p[0])):0);
+    const x1=o.x1!=null?o.x1:(all.length?Math.max(...all.map(p=>p[0])):1);
+    const y0=o.y0!=null?o.y0:(all.length?Math.min(0,...all.map(p=>p[1])):0);
+    const y1=o.y1!=null?o.y1:(maxOf(all,p=>p[1],1)*1.12||1);
     const xs=scale(x0,x1,P.l,W-P.r), ys=scale(y0,y1,H-P.b,P.t);
     const yt=[];for(let i=0;i<=4;i++)yt.push(y0+(y1-y0)*i/4);
     const xt=o.xt||[{v:x0,l:fmt0(x0)},{v:(x0+x1)/2,l:fmt0((x0+x1)/2)},{v:x1,l:fmt0(x1)}];
     let s=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
     s+=axis(W,H,xs,ys,xt,yt,{yd:o.yd==null?1:o.yd});
-    o.series.forEach(se=>{
+    series.forEach(se=>{
       if(se.fill)s+=`<path d="${area(se.pts,xs,ys,y0)}" fill="${se.c}" opacity=".14"/>`;
       s+=`<path d="${path(se.pts,xs,ys)}" fill="none" stroke="${se.c}" stroke-width="${se.w||1.7}" ${se.dash?'stroke-dasharray="5 3"':''}/>`;
       if(se.dots)se.pts.forEach(p=>s+=`<circle cx="${xs(p[0]).toFixed(1)}" cy="${ys(p[1]).toFixed(1)}" r="2.2" fill="${se.c}"/>`);
@@ -1484,7 +1499,8 @@ const CH=(()=>{
 
   function bars(o){
     const W=o.w||440,H=o.h||170;
-    const max=o.max||Math.max(...o.data.map(d=>d.v))*1.15||1;
+    if(!o.data||!o.data.length)return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block"><text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="10" fill="#4E6673" font-family="Barlow Condensed" letter-spacing="1.6">SEM DADOS</text></svg>`;
+    const max=o.max||maxOf(o.data,d=>d.v,1)*1.15||1;
     const n=o.data.length, bw=(W-P.l-P.r)/n*0.72;
     const ys=scale(0,max,H-P.b,P.t);
     const yt=[];for(let i=0;i<=3;i++)yt.push(max*i/3);
@@ -1502,7 +1518,8 @@ const CH=(()=>{
   }
 
   function hbars(o){
-    const rows=o.data, max=Math.max(...rows.map(d=>d.v))||1;
+    const rows=o.data||[]; if(!rows.length)return '<div class="tiny faint">sem dados</div>';
+    const max=maxOf(rows,d=>d.v,1)||1;
     return rows.map(d=>`<div style="display:grid;grid-template-columns:${o.lw||120}px 1fr ${o.vw||54}px;gap:7px;align-items:center;margin-bottom:4px">
       <div style="font-size:10.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.l)}">${esc(d.l)}</div>
       <div class="bar"><i style="width:${(d.v/max*100).toFixed(1)}%;background:${d.c||'var(--info)'}"></i></div>
@@ -1539,19 +1556,21 @@ const CH=(()=>{
 
   function scatter(o){
     const W=o.w||330,H=o.h||220;
-    const x1=o.x1||Math.max(...o.pts.map(p=>p[0]))*1.1, y1=o.y1||Math.max(...o.pts.map(p=>p[1]))*1.1;
+    const pts=o.pts||[];
+    const x1=o.x1||maxOf(pts,p=>p[0],1)*1.1||1, y1=o.y1||maxOf(pts,p=>p[1],1)*1.1||1;
     const xs=scale(0,x1,P.l,W-P.r), ys=scale(0,y1,H-P.b,P.t);
     const yt=[];for(let i=0;i<=4;i++)yt.push(y1*i/4);
     const xt=[];for(let i=0;i<=4;i++)xt.push({v:x1*i/4,l:fmt0(x1*i/4)});
     let s=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block">`;
     s+=axis(W,H,xs,ys,xt,yt,{yd:0});
     s+=`<line x1="${xs(0)}" y1="${ys(0)}" x2="${xs(Math.min(x1,y1))}" y2="${ys(Math.min(x1,y1))}" stroke="#4E6673" stroke-dasharray="4 3"/>`;
-    o.pts.forEach(p=>s+=`<circle cx="${xs(p[0]).toFixed(1)}" cy="${ys(p[1]).toFixed(1)}" r="3" fill="${p[2]||'#19D3E8'}" opacity=".8"/>`);
+    pts.forEach(p=>s+=`<circle cx="${xs(p[0]).toFixed(1)}" cy="${ys(p[1]).toFixed(1)}" r="3" fill="${p[2]||'#19D3E8'}" opacity=".8"/>`);
     return s+'</svg>';
   }
 
   function spark(pts,c,w,h){
     w=w||88;h=h||24;
+    if(!pts||pts.length<2)return `<svg viewBox="0 0 ${w} ${h}" style="width:${w}px;height:${h}px;display:block"></svg>`;
     const y0=Math.min(...pts),y1=Math.max(...pts)||1;
     const xs=i=>i/(pts.length-1)*w, ys=v=>h-2-((v-y0)/((y1-y0)||1))*(h-4);
     const d=pts.map((v,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
@@ -1722,144 +1741,191 @@ const UI=(()=>{
 </script>
 <script>
 /* ============================================================================
-   PLATAFORMA GEOESPACIAL — ArcGIS Maps SDK for JavaScript
-   A chave nunca é embutida: lida de campo em memória (sem armazenamento local).
-   Basemap anônimo OSM quando não há chave. Fallback canvas sempre disponível.
+   PLATAFORMA GEOESPACIAL
+   Motor primário: ArcGIS Maps SDK for JavaScript.
+   Motor secundário: mapa raster interativo próprio (pan/zoom real), usado
+   quando o SDK não pode inicializar — típico em páginas publicadas cujo CSP
+   não libera wasm-unsafe-eval / worker-src blob:, ou em iframes de origem opaca.
+   A chave ArcGIS nunca é embutida: informada em tempo de execução, só em memória.
    ========================================================================== */
 const MAPS=(()=>{
-  let sdk=null, view=null, map=null, ready=false, failed=false, apiKey=null;
-  let L={}; // camadas locais por id
-  let host=null, cfgAtual=null, lastFrame=-1, swipeW=null;
-  const waiters=[];
+  let sdk=null, view=null, map=null, ready=false, apiKey=null;
+  let L={}; let host=null, cfgAtual=null, lastFrame=-1, swipeW=null;
+  let engine='loading';                 // loading | arcgis | raster
+  const waiters=[]; const diag=[];
+  let wdScript=null, wdRequire=null, wdView=null;
 
+  function note(kind,msg){diag.push({t:new Date(),kind,msg});if(diag.length>40)diag.shift()}
+  function clearWatchdogs(){[wdScript,wdRequire,wdView].forEach(t=>t&&clearTimeout(t));wdScript=wdRequire=wdView=null}
+
+  /* ---------- degradação controlada ---------- */
+  function degrade(reason){
+    if(engine==='raster')return;
+    clearWatchdogs();
+    engine='raster'; ready=false;
+    note('degrade',reason);
+    LAYERS.forEach(l=>{if(l.url)LAYER_HEALTH[l.id]={status:'offline',ms:null,msg:'SDK indisponível — '+reason}});
+    BUS.emit('integration.sla.breached',{},
+      {text:`ArcGIS Maps SDK indisponível (${esc(reason)}) — motor raster assumiu o mapa`,sev:'atencao',mod:'M17'});
+    waiters.splice(0).forEach(f=>{try{f(null)}catch(e){}});
+    if(host)mount(host,cfgAtual);
+    APP.rerender();
+  }
+
+  /* ---------- carregamento do SDK ---------- */
   const SDK_VERSIONS=['4.32','4.31','4.30'];
   function loadSDK(i){
     i=i||0;
-    if(i>=SDK_VERSIONS.length){failed=true;LAYERS.forEach(l=>{if(l.url)LAYER_HEALTH[l.id]={status:'offline',ms:null,msg:'SDK indisponível'}});
-      BUS.emit('integration.sla.breached',{},{text:'ArcGIS Maps SDK indisponível — modo esquemático (fallback) ativado',sev:'critico',mod:'M17'});
-      waiters.forEach(f=>f(null));APP.rerender();return}
+    if(i>=SDK_VERSIONS.length){degrade('nenhuma versão do SDK respondeu');return}
     const v=SDK_VERSIONS[i];
+    note('sdk','tentando carregar js.arcgis.com/'+v);
     const s=document.createElement('script');
     s.src='https://js.arcgis.com/'+v+'/';
+    s.async=true;
+    let settled=false;
     s.onload=()=>{
+      if(settled)return; settled=true; clearTimeout(wdScript);
       const css=document.getElementById('arcgis-css');
       if(css)css.href='https://js.arcgis.com/'+v+'/esri/themes/dark/main.css';
-      window.__ARCGIS_V=v; init();
+      window.__ARCGIS_V=v;
+      note('sdk','script carregado ('+v+')');
+      init(v);
     };
-    s.onerror=()=>loadSDK(i+1);
+    s.onerror=()=>{
+      if(settled)return; settled=true; clearTimeout(wdScript);
+      note('sdk','falha ao carregar '+v+' (bloqueio de rede ou CSP script-src)');
+      loadSDK(i+1);
+    };
+    wdScript=setTimeout(()=>{        // CSP às vezes bloqueia sem disparar onerror
+      if(settled)return; settled=true;
+      note('sdk','timeout de 9 s aguardando '+v);
+      loadSDK(i+1);
+    },9000);
     document.head.appendChild(s);
   }
 
-  function init(){
-    if(!window.require){failed=true;waiters.forEach(f=>f(null));return}
-    window.require([
-      'esri/config','esri/Map','esri/views/MapView','esri/layers/TileLayer','esri/layers/MapImageLayer',
-      'esri/layers/FeatureLayer','esri/layers/GraphicsLayer','esri/Graphic','esri/geometry/Polygon',
-      'esri/geometry/Point','esri/geometry/Polyline','esri/widgets/Legend','esri/widgets/ScaleBar','esri/widgets/Swipe'
-    ],(esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,Polygon,Point,Polyline,Legend,ScaleBar,Swipe)=>{
-      sdk={esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,Polygon,Point,Polyline,Legend,ScaleBar,Swipe};
-      esriConfig.applicationName='HidroClima Brasil — Radar das Águas (mockup)';
-      if(apiKey)esriConfig.apiKey=apiKey;
-      esriConfig.request.timeout=14000;
-
-      map=new Map({basemap: apiKey?'arcgis/dark-gray':'osm'});
-      // --- camadas de serviço externas
-      LAYERS.filter(l=>l.url).forEach(cfg=>{
-        let lyr;
-        const common={id:cfg.id,title:cfg.nome,visible:!!cfg.on,opacity:cfg.id==='LY-IMG'?1:.85};
+  function init(v){
+    if(!window.require){degrade('loader AMD não ficou disponível');return}
+    wdRequire=setTimeout(()=>degrade('módulos do SDK não resolveram em 12 s'),12000);
+    try{
+      window.require(['esri/config','esri/Map','esri/views/MapView','esri/layers/TileLayer',
+        'esri/layers/MapImageLayer','esri/layers/FeatureLayer','esri/layers/GraphicsLayer','esri/Graphic',
+        'esri/widgets/ScaleBar','esri/widgets/Swipe'],
+      (esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe)=>{
+        clearTimeout(wdRequire); wdRequire=null;
         try{
-          if(cfg.tipo==='tile')lyr=new TileLayer(Object.assign({url:cfg.url},common));
-          else if(cfg.tipo==='mapimage')lyr=new MapImageLayer(Object.assign({url:cfg.url},common));
-          else if(cfg.tipo==='feature')lyr=new FeatureLayer(Object.assign({url:cfg.url,outFields:['*']},common));
-        }catch(e){LAYER_HEALTH[cfg.id]={status:'offline',ms:null,msg:'construção falhou'};return}
-        if(!lyr)return;
-        const t0=performance.now();
-        LAYER_HEALTH[cfg.id]={status:'carregando',ms:null,msg:'requisitando serviço'};
-        lyr.when(()=>{LAYER_HEALTH[cfg.id]={status:'ok',ms:Math.round(performance.now()-t0),msg:'serviço respondeu'};APP.rerender()},
-                 (err)=>{LAYER_HEALTH[cfg.id]={status:'offline',ms:Math.round(performance.now()-t0),
-                   msg:(cfg.url.startsWith('http://')?'bloqueio de conteúdo misto (http) — ':'')+'indisponível: '+((err&&err.name)||'erro')};
-                   BUS.emit('integration.sla.breached',{layer:cfg.id},{text:`Camada <b>${cfg.nome}</b> indisponível — fallback local ativado`,sev:'atencao',mod:'M17',ref:cfg.id});
-                   APP.rerender();});
-        map.add(lyr);
+          sdk={esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe};
+          buildMap(v);
+        }catch(err){degrade('erro ao construir o mapa: '+((err&&err.message)||err))}
+      },(err)=>{
+        clearTimeout(wdRequire); wdRequire=null;
+        degrade('módulo recusado: '+((err&&err.message)||'erro no loader'));
       });
-      // --- camadas locais (fixtures)
-      ['LY-PREV','LY-OBS','LY-DIV','LY-AOI','LY-MUN','LY-REC','LY-REDE','LY-RSV'].forEach(id=>{
-        const cfg=LAYERS.find(l=>l.id===id);
-        L[id]=new GraphicsLayer({id,title:cfg.nome,visible:!!cfg.on});
-        map.add(L[id]);
-        LAYER_HEALTH[id]={status:'ok',ms:2,msg:'fixture local'};
-      });
-
-      view=new MapView({map,center:[-51.24,-30.03],zoom:9,
-        constraints:{rotationEnabled:false,minZoom:3},
-        ui:{components:['zoom','attribution']},
-        popup:{dockEnabled:false,defaultPopupTemplateEnabled:true}});
-      view.when(()=>{
-        ready=true;
-        try{view.ui.add(new ScaleBar({view,unit:'metric'}),'bottom-left')}catch(e){}
-        drawLocal(true);
-        waiters.forEach(f=>f(view));
-        BUS.emit('integration.sla.breached',{},{text:`ArcGIS Maps SDK ${window.__ARCGIS_V} inicializado · basemap ${apiKey?'arcgis/dark-gray':'osm (anônimo)'}`,sev:'normal',mod:'M17'});
-        APP.rerender();
-      },()=>{failed=true;waiters.forEach(f=>f(null));APP.rerender()});
-    },()=>{failed=true;waiters.forEach(f=>f(null));APP.rerender()});
+    }catch(err){degrade('loader lançou exceção: '+((err&&err.message)||err))}
   }
 
-  /* ---------- símbolos ---------- */
+  function buildMap(v){
+    const {esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,ScaleBar}=sdk;
+    esriConfig.applicationName='HidroClima Brasil — Radar das Águas (mockup)';
+    // Em iframe de origem opaca o IdentityManager acessa storage e lança SecurityError.
+    try{esriConfig.request.useIdentity=false}catch(e){}
+    try{esriConfig.request.timeout=14000}catch(e){}
+    try{esriConfig.assetsPath='https://js.arcgis.com/'+v+'/esri/'}catch(e){}
+    if(apiKey){try{esriConfig.apiKey=apiKey}catch(e){}}
+
+    map=new Map({basemap: apiKey?'arcgis/dark-gray':'osm'});
+
+    LAYERS.filter(l=>l.url).forEach(cfg=>{
+      let lyr;
+      const common={id:cfg.id,title:cfg.nome,visible:!!cfg.on,opacity:cfg.id==='LY-IMG'?1:.85};
+      try{
+        if(cfg.tipo==='tile')lyr=new TileLayer(Object.assign({url:cfg.url},common));
+        else if(cfg.tipo==='mapimage')lyr=new MapImageLayer(Object.assign({url:cfg.url},common));
+        else if(cfg.tipo==='feature')lyr=new FeatureLayer(Object.assign({url:cfg.url,outFields:['*']},common));
+      }catch(e){LAYER_HEALTH[cfg.id]={status:'offline',ms:null,msg:'construção falhou'};return}
+      if(!lyr)return;
+      const t0=performance.now();
+      LAYER_HEALTH[cfg.id]={status:'carregando',ms:null,msg:'requisitando serviço'};
+      lyr.when(()=>{LAYER_HEALTH[cfg.id]={status:'ok',ms:Math.round(performance.now()-t0),msg:'serviço respondeu'};APP.rerender()},
+        (err)=>{LAYER_HEALTH[cfg.id]={status:'offline',ms:Math.round(performance.now()-t0),
+          msg:(cfg.url.indexOf('http://')===0?'bloqueio de conteúdo misto (http) — ':'')+'indisponível: '+((err&&err.name)||'erro')};
+          BUS.emit('integration.sla.breached',{layer:cfg.id},
+            {text:`Camada <b>${esc(cfg.nome)}</b> indisponível — fallback local ativado`,sev:'atencao',mod:'M17',ref:cfg.id});
+          APP.rerender()});
+      map.add(lyr);
+    });
+
+    ['LY-PREV','LY-OBS','LY-DIV','LY-AOI','LY-MUN','LY-REC','LY-REDE','LY-RSV'].forEach(id=>{
+      const cfg=LAYERS.find(l=>l.id===id);
+      L[id]=new GraphicsLayer({id,title:cfg.nome,visible:!!cfg.on});
+      map.add(L[id]);
+      LAYER_HEALTH[id]={status:'ok',ms:2,msg:'fixture local'};
+    });
+
+    view=new MapView({map,center:[-51.24,-30.03],zoom:9,
+      constraints:{rotationEnabled:false,minZoom:3},
+      ui:{components:['zoom','attribution']},
+      popup:{dockEnabled:false,defaultPopupTemplateEnabled:true}});
+
+    wdView=setTimeout(()=>degrade('MapView não inicializou em 15 s (provável bloqueio de WebAssembly ou WebGL)'),15000);
+    view.when(()=>{
+      clearTimeout(wdView); wdView=null;
+      ready=true; engine='arcgis';
+      note('sdk','MapView pronto');
+      try{view.ui.add(new ScaleBar({view,unit:'metric'}),'bottom-left')}catch(e){}
+      drawLocal(true);
+      waiters.splice(0).forEach(f=>{try{f(view)}catch(e){}});
+      BUS.emit('integration.sla.breached',{},
+        {text:`ArcGIS Maps SDK ${v} inicializado · basemap ${apiKey?'arcgis/dark-gray':'osm (anônimo)'}`,sev:'normal',mod:'M17'});
+      APP.rerender();
+    },(err)=>degrade('MapView rejeitou: '+((err&&err.message)||'erro')));
+  }
+
+  /* ---------- camadas locais no modo ArcGIS ---------- */
   const SYM={
     prev:{type:'simple-fill',color:[157,123,255,.30],outline:{color:[157,123,255,.95],width:1.4}},
     obs:{type:'simple-fill',color:[53,184,240,.32],outline:{color:[25,211,232,1],width:1.6}},
     div:{type:'simple-fill',color:[255,74,95,.40],outline:{color:[255,74,95,1],width:1.4}},
-    aoi:{type:'simple-fill',color:[25,211,232,.05],outline:{color:[25,211,232,.9],width:1.4,style:'dash'}},
-    mun:{type:'simple-fill',color:[255,133,52,.14],outline:{color:[255,133,52,.9],width:1}}
+    aoi:{type:'simple-fill',color:[25,211,232,.05],outline:{color:[25,211,232,.9],width:1.4,style:'dash'}}
   };
-  function pt(color,size,outline){return {type:'simple-marker',style:'circle',color,size:size||7,
-    outline:{color:outline||[6,13,19,.9],width:1}}}
-
+  function pt(color,size){return {type:'simple-marker',style:'circle',color,size:size||7,outline:{color:[6,13,19,.9],width:1}}}
   function toPoly(rings){return {type:'polygon',rings:rings.map(r=>r.concat([r[0]])),spatialReference:{wkid:4326}}}
-
+  function sevRGBA(s,a){
+    const m={normal:[47,191,113],info:[53,184,240],atencao:[232,163,23],alerta:[255,133,52],critico:[255,74,95],modelado:[157,123,255]};
+    return (m[s]||[85,112,126]).concat([a]);
+  }
   function drawLocal(force){
     if(!ready||!sdk)return;
     const f=frameNow();
     if(!force&&f.i===lastFrame)return;
     lastFrame=f.i;
     const G=sdk.Graphic;
-
     L['LY-PREV'].removeAll();
     L['LY-PREV'].add(new G({geometry:toPoly(f.prevRings),symbol:SYM.prev,
       attributes:{Camada:'Cenário Referencial de Inundação (previsto)',Versão:f.version,Nível:'N1',Classe:'C',
         'Área km²':fmt0(f.areaPrev),'Uso permitido':'Triagem e preparação — não autoriza projeto ou delimitação legal'},
       popupTemplate:{title:'Cenário Referencial de Inundação',content:'{*}'}}));
-
     L['LY-OBS'].removeAll();
-    f.obsRings.forEach((r,i)=>L['LY-OBS'].add(new G({geometry:toPoly([r]),symbol:SYM.obs,
+    f.obsRings.forEach(r=>L['LY-OBS'].add(new G({geometry:toPoly([r]),symbol:SYM.obs,
       attributes:{Camada:'FloodWatch NRT — observado (sintético)',Versão:f.version,Aquisição:f.acqId,
         'Latência min':f.latency,'Cobertura %':f.coverage,QA:f.qa,'Área km²':fmt0(f.areaObs),Aviso:WM},
       popupTemplate:{title:'Observação de inundação — '+WM,content:'{*}'}})));
-
     L['LY-DIV'].removeAll();
-    // divergência ilustrativa: envelope observado além do previsto
-    f.obsRings.forEach(r=>{
-      const c=centroid(r);
-      const outer=r.map(p=>[c[0]+(p[0]-c[0])*1.0,c[1]+(p[1]-c[1])*1.0]);
-      L['LY-DIV'].add(new G({geometry:toPoly([outer]),symbol:SYM.div,
-        attributes:{Camada:'Divergência previsto × observado',IoU:fmt(f.iou*100,1)+'%',
-          'Área surpresa km²':fmt0(Math.max(0,f.areaObs-f.areaPrev)),Natureza:'Hipótese — exige investigação'},
-        popupTemplate:{title:'Divergência',content:'{*}'}}));
-    });
-
+    f.obsRings.forEach(r=>L['LY-DIV'].add(new G({geometry:toPoly([r]),symbol:SYM.div,
+      attributes:{Camada:'Divergência previsto × observado',IoU:fmt(f.iou*100,1)+'%',
+        'Área surpresa km²':fmt0(Math.max(0,f.areaObs-f.areaPrev)),Natureza:'Hipótese — exige investigação'},
+      popupTemplate:{title:'Divergência',content:'{*}'}})));
     L['LY-AOI'].removeAll();
     L['LY-AOI'].add(new G({geometry:toPoly([expandRing(PLANICIE,1.9,0.02,1)]),symbol:SYM.aoi,
       attributes:{AOI:'AOI-RS-GUAIBA-01',Prioridade:'Alta',SLA:'contratual — não firmado',Status:'monitoramento ativo'},
       popupTemplate:{title:'AOI de aquisição SAR',content:'{*}'}}));
-
     if(L['LY-REDE'].graphics.length===0){
       ESTACOES.forEach(e=>{
         const c={online:[47,191,113],atrasada:[232,163,23],suspeita:[255,133,52],offline:[255,74,95]}[e.status]||[85,112,126];
         L['LY-REDE'].add(new G({geometry:{type:'point',longitude:e.lng,latitude:e.lat},
           symbol:pt(c.concat([.95]),e.bacia==='BAC-GUAIBA'?9:6.5),
           attributes:{Código:e.codigo,Estação:e.nome,Tipo:e.tipo,Operador:e.operador,Status:e.status,
-            'Latência min':e.latencia,'Bateria %':e.bateria,'Sinal %':e.sinal,Classe:e.cls,'Curva-chave':e.curva},
+            'Latência min':e.latencia,'Bateria %':e.bateria,Classe:e.cls,'Curva-chave':e.curva},
           popupTemplate:{title:'{Estação}',content:'{*}'}}));
       });
     }
@@ -1869,137 +1935,322 @@ const MAPS=(()=>{
         L['LY-REC'].add(new G({geometry:{type:'point',longitude:r.lng,latitude:r.lat},
           symbol:{type:'simple-marker',style:'square',color:rgb.concat([.9]),size:6,outline:{color:[6,13,19,.8],width:.8}},
           attributes:{Receptor:r.nome,Tipo:r.tipo,Município:r.municipio,Criticidade:r.criticidade,
-            Classe:r.cls,'Cota limiar m':r.cota,Fonte:r.fonte,Aviso:'Receptor sintético — estimativa rotulada'},
+            Classe:r.cls,'Cota limiar m':r.cota,Fonte:r.fonte},
           popupTemplate:{title:'{Receptor}',content:'{*}'}}));
       });
     }
     if(L['LY-MUN'].graphics.length===0){
       MUNICIPIOS.forEach(m=>{
-        const r=0.055+Math.log10(m.pop)/95;
-        const ring=[];for(let i=0;i<12;i++){const a=i/12*Math.PI*2;ring.push([m.lng+Math.cos(a)*r*1.2,m.lat+Math.sin(a)*r])}
-        L['LY-MUN'].add(new sdk.Graphic({geometry:toPoly([ring]),
+        const rr=0.055+Math.log10(m.pop)/95, ring=[];
+        for(let i=0;i<12;i++){const a=i/12*Math.PI*2;ring.push([m.lng+Math.cos(a)*rr*1.2,m.lat+Math.sin(a)*rr])}
+        L['LY-MUN'].add(new G({geometry:toPoly([ring]),
           symbol:{type:'simple-fill',color:sevRGBA(m.sev,.16),outline:{color:sevRGBA(m.sev,.9),width:1}},
-          attributes:{Município:m.nome,UF:m.uf,'População':fmt0(m.pop),Severidade:m.sev,
-            Fonte:'Malha IBGE (representação esquemática no mockup)'},
+          attributes:{Município:m.nome,UF:m.uf,'População':fmt0(m.pop),Severidade:m.sev},
           popupTemplate:{title:'{Município}',content:'{*}'}}));
       });
     }
     if(L['LY-RSV'].graphics.length===0){
-      RESERVATORIOS.forEach(r=>{
-        L['LY-RSV'].add(new G({geometry:{type:'point',longitude:r.lng,latitude:r.lat},
-          symbol:{type:'simple-marker',style:'triangle',color:sevRGBA(r.sev,.95),size:12,outline:{color:[6,13,19,.9],width:1}},
-          attributes:{Reservatório:r.nome,Rio:r.rio,UF:r.uf,'Volume útil %':r.volUtil,'Afluência m³/s':r.aflu,
-            'Defluência m³/s':r.deflu,Regra:r.regra,Fonte:'SAR/ANA (mock)'},
-          popupTemplate:{title:'{Reservatório}',content:'{*}'}}));
-      });
+      RESERVATORIOS.forEach(r=>L['LY-RSV'].add(new G({geometry:{type:'point',longitude:r.lng,latitude:r.lat},
+        symbol:{type:'simple-marker',style:'triangle',color:sevRGBA(r.sev,.95),size:12,outline:{color:[6,13,19,.9],width:1}},
+        attributes:{Reservatório:r.nome,Rio:r.rio,UF:r.uf,'Volume útil %':r.volUtil,'Afluência m³/s':r.aflu,
+          'Defluência m³/s':r.deflu,Regra:r.regra},
+        popupTemplate:{title:'{Reservatório}',content:'{*}'}})));
     }
   }
-  function sevRGBA(s,a){
-    const m={normal:[47,191,113],info:[53,184,240],atencao:[232,163,23],alerta:[255,133,52],critico:[255,74,95],modelado:[157,123,255]};
-    return (m[s]||[85,112,126]).concat([a]);
+
+  /* ==========================================================================
+     MOTOR RASTER — mapa deslizante próprio, sem dependências.
+     Web Mercator · tiles por <img> (sem CORS, sem WebAssembly) · canvas 2D.
+     ======================================================================== */
+  const TS=256;
+  const TILE_SRC=[
+    {id:'carto',tpl:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',sub:['a','b','c'],
+     attr:'© OpenStreetMap · © CARTO'},
+    {id:'osm',tpl:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',sub:null,
+     attr:'© OpenStreetMap contributors'}
+  ];
+  function projX(lng,z){return (lng+180)/360*TS*Math.pow(2,z)}
+  function projY(lat,z){const s=Math.max(-0.9999,Math.min(0.9999,Math.sin(lat*Math.PI/180)));
+    return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*TS*Math.pow(2,z)}
+  function unprojLng(x,z){return x/(TS*Math.pow(2,z))*360-180}
+  function unprojLat(y,z){const t=Math.PI-2*Math.PI*y/(TS*Math.pow(2,z));
+    return 180/Math.PI*Math.atan(0.5*(Math.exp(t)-Math.exp(-t)))}
+  function sevCss(s,a){
+    const m={normal:'47,191,113',info:'53,184,240',atencao:'232,163,23',alerta:'255,133,52',critico:'255,74,95',modelado:'157,123,255'};
+    return 'rgba('+(m[s]||'85,112,126')+','+a+')';
   }
 
-  /* ---------- montagem em tela ---------- */
+  const tileCache=new Map(); let tileSrcIdx=0, tileFails=0, tilesLive=false;
+  let rKey=null, rState=null, rRepaint=null, rOverride=null;
+
+  function makeRaster(node,cfg){
+    cfg=cfg||{};
+    const key=JSON.stringify([cfg.center||null,cfg.zoom||null]);
+    if(rOverride){rState={center:rOverride.center.slice(),zoom:rOverride.zoom};rKey=key;rOverride=null}
+    else if(key!==rKey||!rState){rKey=key;rState={center:(cfg.center||[-51.24,-30.03]).slice(),zoom:cfg.zoom||9}}
+    node.innerHTML='';
+    const cv=el('canvas',{style:'position:absolute;inset:0;display:block;cursor:grab;touch-action:none'});
+    node.appendChild(cv);
+    const ctx=cv.getContext('2d');
+    const hits=[];
+    let W=0,H=0,dpr=1,raf=null;
+
+    function schedule(){ if(raf)return; raf=requestAnimationFrame(()=>{raf=null;paint()}) }
+    rRepaint=schedule;
+
+    function resize(){
+      const r=node.getBoundingClientRect();
+      if(!r.width||!r.height)return false;
+      dpr=Math.min(2,window.devicePixelRatio||1);
+      W=r.width;H=r.height;
+      cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+      cv.style.width=W+'px';cv.style.height=H+'px';
+      return true;
+    }
+    function tileURL(z,x,y){
+      const s=TILE_SRC[tileSrcIdx];
+      return s.tpl.replace('{s}',s.sub?s.sub[(x+y)%s.sub.length]:'').replace('{z}',z).replace('{x}',x).replace('{y}',y);
+    }
+    function getTile(z,x,y){
+      const k=tileSrcIdx+':'+z+'/'+x+'/'+y;
+      let im=tileCache.get(k);
+      if(im)return im;
+      im=new Image();
+      im.decoding='async';
+      im.onload=()=>{tilesLive=true;schedule()};
+      im.onerror=()=>{
+        tileFails++;
+        if(tileFails===14&&tileSrcIdx<TILE_SRC.length-1){
+          tileSrcIdx++;tileFails=0;tileCache.clear();
+          note('raster','fonte de tiles alternada para '+TILE_SRC[tileSrcIdx].id);
+          schedule();
+        }
+      };
+      im.src=tileURL(z,x,y);
+      tileCache.set(k,im);
+      if(tileCache.size>420){const it=tileCache.keys();for(let i=0;i<120;i++)tileCache.delete(it.next().value)}
+      return im;
+    }
+
+    function paint(){
+      if(!resize())return;
+      const z=rState.zoom, n=Math.pow(2,z);
+      const ox=projX(rState.center[0],z)-W/2, oy=projY(rState.center[1],z)-H/2;
+      const S=(lng,lat)=>[projX(lng,z)-ox, projY(lat,z)-oy];
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      ctx.clearRect(0,0,W,H);
+      ctx.fillStyle='#07121A';ctx.fillRect(0,0,W,H);
+
+      const x0=Math.floor(ox/TS), x1=Math.floor((ox+W)/TS);
+      const y0=Math.max(0,Math.floor(oy/TS)), y1=Math.min(n-1,Math.floor((oy+H)/TS));
+      for(let tx=x0;tx<=x1;tx++)for(let ty=y0;ty<=y1;ty++){
+        const wx=((tx%n)+n)%n;
+        const im=getTile(z,wx,ty);
+        const px=Math.round(tx*TS-ox), py=Math.round(ty*TS-oy);
+        if(im.complete&&im.naturalWidth){try{ctx.drawImage(im,px,py,TS,TS)}catch(e){}}
+        else{ctx.fillStyle='#0A1620';ctx.fillRect(px,py,TS,TS);
+             ctx.strokeStyle='#101F2B';ctx.lineWidth=1;ctx.strokeRect(px+.5,py+.5,TS-1,TS-1)}
+      }
+      if(!tilesLive){
+        ctx.strokeStyle='#12232F';ctx.lineWidth=1;
+        for(let i=0;i<W;i+=48){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,H);ctx.stroke()}
+        for(let i=0;i<H;i+=48){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(W,i);ctx.stroke()}
+      }
+
+      const vis=(cfgAtual&&cfgAtual.layers)||LAYERS.filter(l=>l.on).map(l=>l.id);
+      const f=frameNow();
+      function ring(r,fill,stroke,w){
+        ctx.beginPath();
+        r.forEach((p,i)=>{const s=S(p[0],p[1]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1])});
+        ctx.closePath();
+        if(fill){ctx.fillStyle=fill;ctx.fill()}
+        if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=w||1.5;ctx.stroke()}
+      }
+      ctx.beginPath();
+      CANAL_REF.forEach((p,i)=>{const s=S(p[0],p[1]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1])});
+      ctx.strokeStyle='rgba(30,92,116,.85)';ctx.lineWidth=3;ctx.stroke();
+
+      if(vis.indexOf('LY-MUN')>=0)MUNICIPIOS.forEach(m=>{
+        const rr=0.055+Math.log10(m.pop)/95, rg=[];
+        for(let i=0;i<14;i++){const a=i/14*Math.PI*2;rg.push([m.lng+Math.cos(a)*rr*1.2,m.lat+Math.sin(a)*rr])}
+        ring(rg,sevCss(m.sev,.16),sevCss(m.sev,.85),1);
+      });
+      if(vis.indexOf('LY-AOI')>=0)ring(expandRing(PLANICIE,1.9,0.02,1),null,'rgba(25,211,232,.75)',1.4);
+      if(vis.indexOf('LY-PREV')>=0)f.prevRings.forEach(r=>ring(r,'rgba(157,123,255,.30)','rgba(157,123,255,.95)',1.4));
+      if(vis.indexOf('LY-OBS')>=0)f.obsRings.forEach(r=>ring(r,'rgba(53,184,240,.32)','rgba(25,211,232,1)',1.6));
+      if(vis.indexOf('LY-DIV')>=0)f.obsRings.forEach(r=>ring(r,'rgba(255,74,95,.28)','rgba(255,74,95,.95)',1.4));
+
+      hits.length=0;
+      if(vis.indexOf('LY-REC')>=0)RECEPTORES.forEach(r=>{
+        const s=S(r.lng,r.lat); if(s[0]<-10||s[0]>W+10||s[1]<-10||s[1]>H+10)return;
+        ctx.fillStyle=r.cor;ctx.fillRect(s[0]-3,s[1]-3,6,6);
+        ctx.strokeStyle='rgba(6,13,19,.8)';ctx.lineWidth=.8;ctx.strokeRect(s[0]-3,s[1]-3,6,6);
+        hits.push({x:s[0],y:s[1],type:'receptor',data:r});
+      });
+      if(vis.indexOf('LY-RSV')>=0)RESERVATORIOS.forEach(r=>{
+        const s=S(r.lng,r.lat); if(s[0]<-14||s[0]>W+14||s[1]<-14||s[1]>H+14)return;
+        ctx.beginPath();ctx.moveTo(s[0],s[1]-7);ctx.lineTo(s[0]+7,s[1]+6);ctx.lineTo(s[0]-7,s[1]+6);ctx.closePath();
+        ctx.fillStyle=sevCss(r.sev,.95);ctx.fill();
+        ctx.strokeStyle='rgba(6,13,19,.9)';ctx.lineWidth=1;ctx.stroke();
+        hits.push({x:s[0],y:s[1],type:'reservatorio',data:r});
+      });
+      if(vis.indexOf('LY-REDE')>=0)ESTACOES.forEach(e=>{
+        const s=S(e.lng,e.lat); if(s[0]<-12||s[0]>W+12||s[1]<-12||s[1]>H+12)return;
+        ctx.beginPath();ctx.arc(s[0],s[1],e.bacia==='BAC-GUAIBA'?5:3.6,0,6.2832);
+        ctx.fillStyle={online:'#2FBF71',atrasada:'#E8A317',suspeita:'#FF8534',offline:'#FF4A5F'}[e.status]||'#55707F';
+        ctx.fill();ctx.strokeStyle='rgba(6,13,19,.9)';ctx.lineWidth=1;ctx.stroke();
+        hits.push({x:s[0],y:s[1],type:'estacao',data:e});
+      });
+      if(z>=9&&vis.indexOf('LY-MUN')>=0){
+        ctx.font='10px "IBM Plex Sans", system-ui, sans-serif';
+        MUNICIPIOS.forEach(m=>{const s=S(m.lng,m.lat);
+          if(s[0]<0||s[0]>W||s[1]<0||s[1]>H)return;
+          const tw=ctx.measureText(m.nome).width;
+          ctx.fillStyle='rgba(6,13,19,.75)';ctx.fillRect(s[0]+7,s[1]-8,tw+6,13);
+          ctx.fillStyle='#DCEAF3';ctx.fillText(m.nome,s[0]+10,s[1]+2)});
+      }
+      const at=TILE_SRC[tileSrcIdx].attr+'  ·  z'+z+'  ·  '+stamp(CLOCK.date());
+      ctx.font='9px "IBM Plex Mono", monospace';
+      const aw=ctx.measureText(at).width;
+      ctx.fillStyle='rgba(6,13,19,.72)';ctx.fillRect(W-aw-12,H-16,aw+10,14);
+      ctx.fillStyle='#8FA8B6';ctx.fillText(at,W-aw-7,H-6);
+    }
+
+    let dragging=false,moved=false,lx=0,ly=0;
+    cv.addEventListener('pointerdown',ev=>{
+      dragging=true;moved=false;lx=ev.clientX;ly=ev.clientY;
+      cv.style.cursor='grabbing';
+      try{cv.setPointerCapture&&cv.setPointerCapture(ev.pointerId)}catch(e){}
+    });
+    cv.addEventListener('pointermove',ev=>{
+      if(!dragging)return;
+      const dx=ev.clientX-lx, dy=ev.clientY-ly;
+      if(Math.abs(dx)+Math.abs(dy)>3)moved=true;
+      lx=ev.clientX;ly=ev.clientY;
+      const z=rState.zoom;
+      const nx=projX(rState.center[0],z)-dx, ny=projY(rState.center[1],z)-dy;
+      rState.center=[unprojLng(nx,z),clamp(unprojLat(ny,z),-84,84)];
+      schedule();
+    });
+    cv.addEventListener('pointerup',ev=>{
+      if(!dragging)return; dragging=false; cv.style.cursor='grab';
+      if(moved)return;
+      const r=cv.getBoundingClientRect();
+      const px=ev.clientX-r.left, py=ev.clientY-r.top;
+      let best=null,bd=1e9;
+      hits.forEach(h=>{const d=(h.x-px)*(h.x-px)+(h.y-py)*(h.y-py);if(d<bd){bd=d;best=h}});
+      if(best&&bd<170){APP.selected={type:best.type,data:best.data};APP.rightTab='detail';APP.rightOpen=true;APP.rerender()}
+    });
+    cv.addEventListener('pointercancel',()=>{dragging=false;cv.style.cursor='grab'});
+    cv.addEventListener('wheel',ev=>{
+      ev.preventDefault();
+      const r=cv.getBoundingClientRect();
+      const px=ev.clientX-r.left, py=ev.clientY-r.top;
+      const z=rState.zoom, nz=clamp(z+(ev.deltaY<0?1:-1),3,17);
+      if(nz===z)return;
+      const lng=unprojLng(projX(rState.center[0],z)-r.width/2+px,z);
+      const lat=unprojLat(projY(rState.center[1],z)-r.height/2+py,z);
+      const nxc=projX(lng,nz)+(r.width/2-px), nyc=projY(lat,nz)+(r.height/2-py);
+      rState.zoom=nz;
+      rState.center=[unprojLng(nxc,nz),clamp(unprojLat(nyc,nz),-84,84)];
+      schedule();
+    },{passive:false});
+    cv.addEventListener('dblclick',()=>{rState.zoom=clamp(rState.zoom+1,3,17);schedule()});
+
+    const ctr=el('div',{class:'map-ov',style:'right:9px;bottom:52px;display:flex;flex-direction:column;gap:4px'});
+    [['+',1],['−',-1]].forEach(b=>{
+      const btn=el('button',{class:'btn',style:'width:28px;height:28px;justify-content:center;padding:0;font-size:15px'},b[0]);
+      btn.onclick=()=>{rState.zoom=clamp(rState.zoom+b[1],3,17);schedule()};
+      ctr.appendChild(btn);
+    });
+    node.appendChild(ctr);
+
+    if(typeof ResizeObserver!=='undefined'){try{new ResizeObserver(()=>schedule()).observe(node)}catch(e){}}
+    schedule(); setTimeout(schedule,120); setTimeout(schedule,600);
+  }
+
+  /* ---------- montagem ---------- */
   function mount(node,cfg){
     cfg=cfg||{}; cfgAtual=cfg; host=node;
-    if(failed){renderFallback(node,cfg);return}
-    if(!ready){waiters.push(()=>mount(node,cfg));node.innerHTML='<div class="maploading">Inicializando ArcGIS Maps SDK…</div>';return}
+    if(engine==='raster'){makeRaster(node,cfg);return}
+    if(!ready){
+      waiters.push(()=>{if(host===node)mount(node,cfg)});
+      node.innerHTML='<div class="maploading">Inicializando ArcGIS Maps SDK…</div>';
+      return;
+    }
     node.innerHTML='';
     const inner=el('div',{class:'esrimap'});
     node.appendChild(inner);
-    try{ view.container=inner; }catch(e){ renderFallback(node,cfg); return; }
+    try{ view.container=inner; }catch(e){ degrade('não foi possível anexar o MapView'); return; }
     applyVis(cfg.layers);
-    if(cfg.center)view.goTo({center:cfg.center,zoom:cfg.zoom||9},{duration:600}).catch(()=>{});
+    if(cfg.center){try{view.goTo({center:cfg.center,zoom:cfg.zoom||9},{duration:600}).catch(()=>{})}catch(e){}}
     if(swipeW){try{swipeW.destroy()}catch(e){};swipeW=null}
     if(cfg.swipe&&sdk.Swipe){
       try{swipeW=new sdk.Swipe({view,leadingLayers:[L['LY-PREV']],trailingLayers:[L['LY-OBS']],position:50,direction:'horizontal'});
-        view.ui.add(swipeW);}catch(e){}
+        view.ui.add(swipeW)}catch(e){}
     }
     drawLocal(true);
   }
   function applyVis(ids){
+    if(engine==='raster'){if(rRepaint)rRepaint();return}
     if(!ready)return;
     if(!ids){LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=!!l.on});return}
-    LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=ids.includes(l.id)});
+    LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=ids.indexOf(l.id)>=0});
   }
   function toggle(id){
     const cfg=LAYERS.find(l=>l.id===id); if(!cfg)return;
     cfg.on=!cfg.on;
-    if(ready){const ly=map.findLayerById(id);if(ly)ly.visible=cfg.on}
+    if(ready&&map){const ly=map.findLayerById(id);if(ly)ly.visible=cfg.on}
     if(cfgAtual&&cfgAtual.layers){
-      if(cfg.on){if(!cfgAtual.layers.includes(id))cfgAtual.layers.push(id)}
+      if(cfg.on){if(cfgAtual.layers.indexOf(id)<0)cfgAtual.layers.push(id)}
       else cfgAtual.layers=cfgAtual.layers.filter(x=>x!==id);
     }
-    if(failed&&host)renderFallback(host,cfgAtual);
+    if(engine==='raster'&&rRepaint)rRepaint();
     APP.rerender();
   }
   function setKey(k){
     apiKey=k||null;
-    if(ready&&sdk){sdk.esriConfig.apiKey=apiKey;
+    if(ready&&sdk){
+      try{sdk.esriConfig.apiKey=apiKey}catch(e){}
       try{map.basemap=apiKey?'arcgis/dark-gray':'osm'}catch(e){}
-      UI.toast('Chave ArcGIS aplicada','Basemap alternado para arcgis/dark-gray. A chave permanece apenas em memória nesta sessão.','ok');}
-    else UI.toast('Chave registrada','Será aplicada quando o SDK terminar de carregar.','ok');
+      UI.toast('Chave ArcGIS aplicada','Basemap alternado. A chave permanece apenas em memória nesta sessão.','ok');
+    }else if(engine==='raster'){
+      UI.toast('Chave registrada','O motor raster não usa a chave. Use “recarregar o SDK” no painel de camadas.','warn');
+    }else UI.toast('Chave registrada','Será aplicada quando o SDK terminar de carregar.','ok');
     APP.rerender();
   }
-  function goTo(center,zoom){if(ready)view.goTo({center,zoom:zoom||10},{duration:700}).catch(()=>{})}
-
-  /* ---------- fallback esquemático (canvas) ---------- */
-  function renderFallback(node,cfg){
-    cfg=cfg||{};
-    node.innerHTML='';
-    const cv=el('canvas',{class:'mapfallback'});
-    node.appendChild(cv);
-    const ov=el('div',{class:'map-ov ov-tl'},
-      `<div class="mpanel"><div class="mb tiny" style="max-width:250px;color:var(--atencao)">
-        <b>Modo esquemático</b><br>O ArcGIS Maps SDK não pôde ser carregado neste ambiente. A jornada continua com
-        renderização local das geometrias e das fixtures.</div></div>`);
-    node.appendChild(ov);
-    function paint(){
-      const r=node.getBoundingClientRect(); if(!r.width)return;
-      const dpr=Math.min(2,window.devicePixelRatio||1);
-      cv.width=r.width*dpr;cv.height=r.height*dpr;cv.style.width=r.width+'px';cv.style.height=r.height+'px';
-      const g=cv.getContext('2d');g.scale(dpr,dpr);
-      const c=cfg.center||[-51.24,-30.03], z=cfg.zoom||9;
-      const sc=Math.pow(2,z)*0.72;
-      const px=(lng)=>r.width/2+(lng-c[0])*sc*Math.cos(c[1]*Math.PI/180)*3.2;
-      const py=(lat)=>r.height/2-(lat-c[1])*sc*3.2;
-      g.fillStyle='#07121A';g.fillRect(0,0,r.width,r.height);
-      g.strokeStyle='#101F2B';g.lineWidth=1;
-      for(let i=0;i<=r.width;i+=44){g.beginPath();g.moveTo(i,0);g.lineTo(i,r.height);g.stroke()}
-      for(let i=0;i<=r.height;i+=44){g.beginPath();g.moveTo(0,i);g.lineTo(r.width,i);g.stroke()}
-      const vis=cfg.layers||LAYERS.filter(l=>l.on).map(l=>l.id);
-      // canal de referência
-      g.strokeStyle='#1E5C74';g.lineWidth=3;g.beginPath();
-      CANAL_REF.forEach((p,i)=>i?g.lineTo(px(p[0]),py(p[1])):g.moveTo(px(p[0]),py(p[1])));g.stroke();
-      const f=frameNow();
-      function poly(rings,fill,stroke){rings.forEach(rg=>{g.beginPath();rg.forEach((p,i)=>i?g.lineTo(px(p[0]),py(p[1])):g.moveTo(px(p[0]),py(p[1])));
-        g.closePath();g.fillStyle=fill;g.fill();g.strokeStyle=stroke;g.lineWidth=1.4;g.stroke()})}
-      if(vis.includes('LY-PREV'))poly(f.prevRings,'rgba(157,123,255,.28)','rgba(157,123,255,.95)');
-      if(vis.includes('LY-OBS'))poly(f.obsRings,'rgba(53,184,240,.30)','rgba(25,211,232,1)');
-      if(vis.includes('LY-DIV'))poly(f.obsRings,'rgba(255,74,95,.22)','rgba(255,74,95,.9)');
-      if(vis.includes('LY-MUN'))MUNICIPIOS.forEach(m=>{const x=px(m.lng),y=py(m.lat);
-        if(x<-40||x>r.width+40)return;g.beginPath();g.arc(x,y,5,0,7);g.fillStyle=sevCss(m.sev,.7);g.fill();
-        g.fillStyle='#AEC6D6';g.font='9px IBM Plex Sans';g.fillText(m.nome,x+7,y+3)});
-      if(vis.includes('LY-REC'))RECEPTORES.forEach(rc=>{const x=px(rc.lng),y=py(rc.lat);g.fillStyle=rc.cor+'CC';g.fillRect(x-2,y-2,4,4)});
-      if(vis.includes('LY-REDE'))ESTACOES.forEach(e=>{const x=px(e.lng),y=py(e.lat);
-        if(x<-20||x>r.width+20||y<-20||y>r.height+20)return;
-        g.beginPath();g.arc(x,y,e.bacia==='BAC-GUAIBA'?5:3.4,0,7);
-        g.fillStyle={online:'#2FBF71',atrasada:'#E8A317',suspeita:'#FF8534',offline:'#FF4A5F'}[e.status]||'#55707F';g.fill()});
-      if(vis.includes('LY-RSV'))RESERVATORIOS.forEach(rs=>{const x=px(rs.lng),y=py(rs.lat);
-        g.beginPath();g.moveTo(x,y-6);g.lineTo(x+6,y+5);g.lineTo(x-6,y+5);g.closePath();g.fillStyle=sevCss(rs.sev,.95);g.fill()});
-      g.fillStyle='#4E6673';g.font='9px IBM Plex Mono';
-      g.fillText('projeção esquemática · EPSG:4326 aprox · '+stamp(CLOCK.date()),8,r.height-8);
+  function goTo(center,zoom){
+    if(engine==='raster'){
+      rState={center:center.slice(),zoom:zoom||10};
+      rOverride={center:center.slice(),zoom:zoom||10};
+      if(rRepaint)rRepaint();
+      return;
     }
-    function sevCss(s,a){const m={normal:'47,191,113',info:'53,184,240',atencao:'232,163,23',alerta:'255,133,52',critico:'255,74,95'};
-      return 'rgba('+(m[s]||'85,112,126')+','+a+')'}
-    paint(); setTimeout(paint,80);
-    const ro=new ResizeObserver(debounce(paint,120)); ro.observe(node);
-    CLOCK.onTick(debounce(paint,400));
+    if(ready){try{view.goTo({center,zoom:zoom||10},{duration:700}).catch(()=>{})}catch(e){}}
+  }
+  function retry(){
+    if(engine==='arcgis')return;
+    engine='loading';ready=false;sdk=null;view=null;map=null;L={};lastFrame=-1;
+    note('sdk','recarregamento solicitado pelo operador');
+    if(host)host.innerHTML='<div class="maploading">Recarregando ArcGIS Maps SDK…</div>';
+    APP.rerender();
+    if(window.require&&window.__ARCGIS_V)init(window.__ARCGIS_V); else loadSDK(0);
+  }
+  function engineLabel(){
+    if(engine==='arcgis')return 'ArcGIS SDK '+(window.__ARCGIS_V||'');
+    if(engine==='raster')return 'motor raster';
+    return 'carregando…';
   }
 
-  CLOCK.onTick(()=>{ if(ready) drawLocal(false); });
+  CLOCK.onTick(()=>{
+    if(engine==='arcgis'&&ready)drawLocal(false);
+    else if(engine==='raster'&&rRepaint&&frameNow().i!==lastFrame){lastFrame=frameNow().i;rRepaint()}
+  });
+
   loadSDK(0);
-  return {mount,toggle,setKey,goTo,applyVis,isReady:()=>ready,isFailed:()=>failed,hasKey:()=>!!apiKey,view:()=>view};
+  return {mount,toggle,setKey,goTo,applyVis,retry,engineLabel,
+    isReady:()=>ready, isFailed:()=>engine==='raster', engine:()=>engine,
+    diag:()=>diag, view:()=>view};
 })();
 
 /* ---------- Bloco de mapa reutilizável nas telas ---------- */
@@ -2011,21 +2262,50 @@ function mapBlock(o){
     MAPS.mount(n,{center:o.center,zoom:o.zoom,layers:o.layers,swipe:o.swipe});
     $$('.lyr[data-ly]').forEach(b=>b.onclick=()=>MAPS.toggle(b.dataset.ly));
     const kb=$('#applyKey'); if(kb)kb.onclick=()=>{const v=$('#keyInput').value.trim();MAPS.setKey(v)};
+    const rb=$('#retrySdk'); if(rb)rb.onclick=()=>MAPS.retry();
+    const db=$('#diagBtn'); if(db)db.onclick=()=>UI.modal('Diagnóstico do motor geoespacial',
+      `<div class="doc" style="font-size:11.5px">
+        <p>Motor ativo: <b>${esc(MAPS.engineLabel())}</b>.</p>
+        <h4>Registro de inicialização</h4>
+        <div class="tool">${MAPS.diag().map(d=>
+          `<span class="to"><span style="color:var(--faint)">${hhmm(d.t)}</span> <span class="tn">${esc(d.kind)}</span> ${esc(d.msg)}</span>`).join('')||'<span class="to">sem registros</span>'}</div>
+        <h4>Por que o SDK pode não iniciar em uma página publicada</h4>
+        <ul>
+          <li><b>CSP sem <code>wasm-unsafe-eval</code></b> em <code>script-src</code> — o SDK usa WebAssembly e o MapView não inicializa.</li>
+          <li><b>CSP sem <code>worker-src blob:</code></b> — o SDK cai para a thread principal e pode não concluir.</li>
+          <li><b>iframe de origem opaca</b>, sem <code>allow-same-origin</code> — acesso a storage lança <code>SecurityError</code>.</li>
+          <li><b><code>script-src</code> sem <code>js.arcgis.com</code></b> — o script sequer chega a carregar.</li>
+          <li><b>WebGL indisponível</b> no dispositivo ou no contexto de renderização.</li>
+        </ul>
+        <h4>O que a aplicação faz nesse caso</h4>
+        <p>Assume o motor raster próprio: mapa deslizante em projeção Web Mercator, tiles servidos por
+        <code>&lt;img&gt;</code> — que não dependem de CORS nem de WebAssembly — e todas as camadas operacionais
+        desenhadas em canvas 2D. Arraste para deslocar, use a roda para o zoom e clique em um ponto para inspecioná-lo
+        no painel direito. A jornada permanece completa.</p>
+      </div>`,
+      `<button class="btn btn-p" onclick="MAPS.retry();UI.closeModal()">Tentar recarregar o SDK</button>`);
   },0);
   const shown=o.layers||LAYERS.filter(l=>l.on).map(l=>l.id);
   const grupos={};
-  LAYERS.forEach(l=>{ if(o.only&&!o.only.includes(l.id))return; (grupos[l.grupo]=grupos[l.grupo]||[]).push(l)});
+  LAYERS.forEach(l=>{ if(o.only&&o.only.indexOf(l.id)<0)return; (grupos[l.grupo]=grupos[l.grupo]||[]).push(l)});
   const f=frameNow();
+  const eng=MAPS.engine();
   return `<div class="mapwrap" style="${o.style||'height:100%'}">
     <div id="${id}" style="position:absolute;inset:0"></div>
     <div class="map-ov ov-tl">
-      <div class="mpanel" style="width:250px">
-        <div class="mh">Camadas ${MAPS.isReady()?UI.statusDot('ok'):MAPS.isFailed()?UI.statusDot('offline'):UI.statusDot('atencao')}
-          <span style="margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--faint)">${MAPS.isFailed()?'fallback':'SDK '+(window.__ARCGIS_V||'…')}</span></div>
-        <div class="mb" style="max-height:270px;overflow:auto">
+      <div class="mpanel" style="width:252px">
+        <div class="mh">Camadas
+          ${eng==='arcgis'?UI.statusDot('ok'):eng==='raster'?UI.statusDot('atencao'):UI.statusDot('idle')}
+          <button id="diagBtn" title="Diagnóstico do motor geoespacial"
+            style="margin-left:auto;font-family:var(--mono);font-size:9px;text-decoration:underline;color:${eng==='raster'?'var(--atencao)':'var(--faint)'}">
+            ${esc(MAPS.engineLabel())}</button></div>
+        <div class="mb" style="max-height:262px;overflow:auto">
+          ${eng==='raster'?`<div class="tiny" style="color:var(--atencao);margin-bottom:6px;line-height:1.4">
+            Motor raster ativo — arraste, use a roda para o zoom e clique nos pontos.
+            <button id="retrySdk" style="color:var(--hidro);text-decoration:underline">recarregar o SDK</button></div>`:''}
           ${Object.keys(grupos).map(g=>`<div class="tiny faint" style="margin:5px 0 2px;letter-spacing:.14em;text-transform:uppercase">${esc(g)}</div>
             ${grupos[g].map(l=>{const h=LAYER_HEALTH[l.id]||{};
-              return `<div class="lyr ${shown.includes(l.id)?'on':''}" data-ly="${l.id}" title="${esc(l.fonte)} · ${esc(h.msg||'')}">
+              return `<div class="lyr ${shown.indexOf(l.id)>=0?'on':''}" data-ly="${l.id}" title="${esc(l.fonte)} · ${esc(h.msg||'')}">
                 <span class="sw"></span><span class="nm">${esc(l.nome)}</span>
                 <span class="st" style="background:${h.status==='ok'?'var(--normal)':h.status==='carregando'?'var(--atencao)':h.status==='offline'?'var(--critico)':'var(--semdados)'}"></span>
               </div>`}).join('')}`).join('')}
@@ -2046,12 +2326,12 @@ function mapBlock(o){
           <div class="tiny faint">Versão da mancha <b class="mono" style="color:var(--hidro)">${f.version}</b> · ${stamp(f.t)}<br>
           IoU ${fmt(f.iou*100,1)}% · cobertura ${fmt(f.coverage,1)}%</div>
         </div></div>`}
-      ${MAPS.hasKey()?'':`<div class="mpanel" style="width:216px">
+      ${eng==='arcgis'?`<div class="mpanel" style="width:216px">
         <div class="mh">Chave ArcGIS</div>
         <div class="mb">
           <div class="tiny faint mb6">Opcional. Sem chave o mapa opera com basemap <b>osm</b> anônimo. A chave fica só em memória e nunca é gravada.</div>
-          <div class="flexr"><input class="inp" id="keyInput" placeholder="VITE_ARCGIS_API_KEY" style="flex:1;min-width:0"><button class="btn btn-sm btn-p" id="applyKey">Aplicar</button></div>
-        </div></div>`}
+          <div class="flexr"><input class="inp" id="keyInput" placeholder="ARCGIS_API_KEY" style="flex:1;min-width:0"><button class="btn btn-sm btn-p" id="applyKey">Aplicar</button></div>
+        </div></div>`:''}
     </div>
     ${o.noWatermark?'':`<div class="wm">${WM}</div>`}
     ${o.overlayBottomLeft||''}
@@ -3031,8 +3311,9 @@ SCREENS.M0=[
           desc:Object.values(LAYER_HEALTH).filter(h=>h.status==='offline').length+' indisponíveis'})}
         ${UI.kpi({label:'Feições no viewport',value:fmt0(ESTACOES.length+RECEPTORES.length+MUNICIPIOS.length),unit:'',sev:'info',plain:true,
           desc:'clustering ativo acima de 500'})}
-        ${UI.kpi({label:'SDK',value:MAPS.isFailed()?'fallback':(window.__ARCGIS_V||'…'),unit:'',sev:MAPS.isFailed()?'alerta':'normal',plain:true,
-          desc:MAPS.hasKey()?'basemap arcgis/dark-gray':'basemap osm anônimo'})}
+        ${UI.kpi({label:'Motor geoespacial',value:MAPS.engine()==='arcgis'?'ArcGIS':MAPS.engine()==='raster'?'raster':'…',
+          unit:'',sev:MAPS.engine()==='raster'?'atencao':'normal',plain:true,
+          desc:MAPS.engineLabel(),foot:MAPS.engine()==='raster'?'SDK indisponível — jornada preservada':'basemap anônimo'})}
         ${UI.kpi({label:'Selo de simulação',value:'ativo',unit:'',sev:'modelado',plain:true,desc:WM})}
       </div>
     </div></div>`;
@@ -7593,8 +7874,8 @@ SCREENS.M18=[
       {text:'Sessão iniciada em <b>h+'+fmt(CLOCK.hour(),1)+'</b> do cenário — evento em nível 4, fase de resposta',sev:'critico',mod:'M0'});
   },1600);
   setTimeout(()=>{
-    if(MAPS.isFailed())UI.toast('Mapa em modo esquemático',
-      'O ArcGIS Maps SDK não pôde ser carregado neste ambiente. As geometrias seguem sendo renderizadas localmente.','warn');
+    if(MAPS.isFailed())UI.toast('Motor raster assumiu o mapa',
+      'O ArcGIS Maps SDK não iniciou neste contexto. O mapa segue navegável — clique no rótulo do motor, no painel de camadas, para ver o diagnóstico.','warn');
   },7000);
 })();
 </script>
