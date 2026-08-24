@@ -7,13 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link id="arcgis-css" rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/dark/main.css" />
-<script>
-/* Precede qualquer carregamento do ArcGIS Maps SDK.
-   csp-restrictions faz o loader AMD evitar new Function()/eval, bloqueados por
-   CSP sem 'unsafe-eval' — condição comum em páginas publicadas e iframes. */
-window.dojoConfig={async:true,has:{'csp-restrictions':true,'dojo-firebug':false,'dojo-debug-messages':false}};
-</script>
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css">
+<script src="https://js.arcgis.com/4.30/"></script>
 <style>
 /* ============================================================
    HIDROCLIMA BRASIL — design tokens
@@ -917,13 +912,13 @@ const LAYERS=[
    nota:'Serviço público informado no briefing. Sujeito a bloqueio por conteúdo misto (http) — fallback ativo.'},
   {id:'LY-BHO',  nome:'ANA — Hidrografia BHO (dados abertos)',grupo:'ANA/SNIRH', tipo:'mapimage',
    url:'https://portal1.snirh.gov.br/server/rest/services/dados_abertos/Hidrografia/MapServer',
-   item:null, on:false, fonte:'ANA — BHO6', lic:'Dados abertos ANA', cls:'B'},
+   item:null, on:true, fonte:'ANA — BHO6', lic:'Dados abertos ANA', cls:'B'},
   {id:'LY-BAC',  nome:'ANA — Divisão de bacias (SNIRH 2016)', grupo:'ANA/SNIRH', tipo:'feature',
    url:'https://portal1.snirh.gov.br/arcgis/rest/services/SNIRH2016/Divisao_de_bacias/FeatureServer/0',
-   item:null, on:false, fonte:'ANA — SNIRH', lic:'Dados abertos ANA', cls:'B'},
+   item:null, on:true, fonte:'ANA — SNIRH', lic:'Dados abertos ANA', cls:'B'},
   {id:'LY-ESTA', nome:'ANA — Estações em operação',           grupo:'ANA/SNIRH', tipo:'feature',
    url:'https://portal1.snirh.gov.br/arcgis/rest/services/SPR/Estacoes_Operacao_ANA_UF_UGRH/FeatureServer/0',
-   item:'4ebd18599e8340cd9d7974b62784ff68', on:false, fonte:'ANA — RHN', lic:'Dados abertos ANA', cls:'B'},
+   item:'4ebd18599e8340cd9d7974b62784ff68', on:true, fonte:'ANA — RHN', lic:'Dados abertos ANA', cls:'B'},
   {id:'LY-REDE', nome:'Rede RHN — telemetria (fixture)',      grupo:'Operacional',tipo:'local',
    url:null, item:null, on:true, fonte:'Fixture determinística', lic:'Mockup', cls:'C'},
   {id:'LY-PREV', nome:'Cenário Referencial de Inundação (previsto)',grupo:'Modelado',tipo:'local',
@@ -1749,14 +1744,24 @@ const UI=(()=>{
    A chave ArcGIS nunca é embutida: informada em tempo de execução, só em memória.
    ========================================================================== */
 const MAPS=(()=>{
-  let sdk=null, view=null, map=null, ready=false, apiKey=null;
-  let L={}; let host=null, cfgAtual=null, lastFrame=-1, swipeW=null;
+  let sdk=null, view=null, map=null, ready=false;
+  let L={}; let host=null, cfgAtual=null, lastFrame=-1, swipeW=null, viewHost=null;
+  const visUser={};              // camadas ligadas/desligadas pelo operador — sobrepõem o padrão da tela
+  let tool='identify';           // identify | pan
+  let baseLayers=null;           // conjunto declarado pela tela atual
+  function effectiveVis(base){
+    if(base)baseLayers=base.slice();
+    const set=new Set(baseLayers||LAYERS.filter(l=>l.on).map(l=>l.id));
+    Object.keys(visUser).forEach(id=>{ if(visUser[id])set.add(id); else set.delete(id) });
+    LAYERS.forEach(l=>l.on=set.has(l.id));
+    return set;
+  }
   let engine='loading';                 // loading | arcgis | raster
   const waiters=[]; const diag=[];
-  let wdScript=null, wdRequire=null, wdView=null;
+  let wdView=null;
 
   function note(kind,msg){diag.push({t:new Date(),kind,msg});if(diag.length>40)diag.shift()}
-  function clearWatchdogs(){[wdScript,wdRequire,wdView].forEach(t=>t&&clearTimeout(t));wdScript=wdRequire=wdView=null}
+  function clearWatchdogs(){if(wdView)clearTimeout(wdView);wdView=null}
 
   /* ---------- degradação controlada ---------- */
   function degrade(reason){
@@ -1772,68 +1777,63 @@ const MAPS=(()=>{
     APP.rerender();
   }
 
-  /* ---------- carregamento do SDK ---------- */
-  const SDK_VERSIONS=['4.32','4.31','4.30'];
-  function loadSDK(i){
-    i=i||0;
-    if(i>=SDK_VERSIONS.length){degrade('nenhuma versão do SDK respondeu');return}
-    const v=SDK_VERSIONS[i];
-    note('sdk','tentando carregar js.arcgis.com/'+v);
-    const s=document.createElement('script');
-    s.src='https://js.arcgis.com/'+v+'/';
-    s.async=true;
-    let settled=false;
-    s.onload=()=>{
-      if(settled)return; settled=true; clearTimeout(wdScript);
-      const css=document.getElementById('arcgis-css');
-      if(css)css.href='https://js.arcgis.com/'+v+'/esri/themes/dark/main.css';
-      window.__ARCGIS_V=v;
-      note('sdk','script carregado ('+v+')');
-      init(v);
-    };
-    s.onerror=()=>{
-      if(settled)return; settled=true; clearTimeout(wdScript);
-      note('sdk','falha ao carregar '+v+' (bloqueio de rede ou CSP script-src)');
-      loadSDK(i+1);
-    };
-    wdScript=setTimeout(()=>{        // CSP às vezes bloqueia sem disparar onerror
-      if(settled)return; settled=true;
-      note('sdk','timeout de 9 s aguardando '+v);
-      loadSDK(i+1);
-    },9000);
-    document.head.appendChild(s);
+  /* ---------- resolução do SDK (script estático no <head>, padrão AMD) ------
+     O script é declarado estaticamente no documento. Injetar <script> em tempo
+     de execução é o que falhava em páginas publicadas: além do CSP, o loader
+     Dojo perde a URL base. Aqui apenas resolvemos os módulos do loader global. */
+  const ARCGIS_ONLINE='https://services.arcgisonline.com/ArcGIS/rest/services/';
+  const BASEMAPS={
+    dark:{n:'Esri · World Dark Gray Canvas',base:ARCGIS_ONLINE+'Canvas/World_Dark_Gray_Base/MapServer',
+          ref:ARCGIS_ONLINE+'Canvas/World_Dark_Gray_Reference/MapServer'},
+    imagery:{n:'Esri · World Imagery',base:ARCGIS_ONLINE+'World_Imagery/MapServer',
+          ref:ARCGIS_ONLINE+'Reference/World_Boundaries_and_Places/MapServer'},
+    terrain:{n:'Esri · World Terrain',base:ARCGIS_ONLINE+'World_Terrain_Base/MapServer',
+          ref:ARCGIS_ONLINE+'Reference/World_Boundaries_and_Places/MapServer'},
+    topo:{n:'Esri · World Topographic',base:ARCGIS_ONLINE+'World_Topo_Map/MapServer'}
+  };
+  let basemapId='dark';
+
+  function esriReady(){
+    return new Promise((res,rej)=>{
+      if(sdk)return res(sdk);
+      if(typeof window.require==='undefined')
+        return rej(new Error('ArcGIS Maps SDK indisponível — script da CDN não carregou'));
+      let done=false;
+      const to=setTimeout(()=>{if(!done){done=true;rej(new Error('módulos do SDK não resolveram em 20 s'))}},20000);
+      try{
+        window.require(['esri/config','esri/Map','esri/Basemap','esri/views/MapView','esri/layers/TileLayer',
+          'esri/layers/MapImageLayer','esri/layers/FeatureLayer','esri/layers/GraphicsLayer','esri/Graphic',
+          'esri/widgets/ScaleBar','esri/widgets/Swipe',
+          'esri/rest/identify','esri/rest/support/IdentifyParameters'],
+        (esriConfig,Map,Basemap,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe,
+         identifyRest,IdentifyParameters)=>{
+          if(done)return; done=true; clearTimeout(to);
+          sdk={esriConfig,Map,Basemap,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe,
+               identifyRest,IdentifyParameters};
+          note('sdk','módulos resolvidos');
+          res(sdk);
+        },err=>{if(done)return;done=true;clearTimeout(to);rej(err||new Error('falha ao resolver módulos'))});
+      }catch(err){if(!done){done=true;clearTimeout(to);rej(err)}}
+    });
   }
 
-  function init(v){
-    if(!window.require){degrade('loader AMD não ficou disponível');return}
-    wdRequire=setTimeout(()=>degrade('módulos do SDK não resolveram em 12 s'),12000);
-    try{
-      window.require(['esri/config','esri/Map','esri/views/MapView','esri/layers/TileLayer',
-        'esri/layers/MapImageLayer','esri/layers/FeatureLayer','esri/layers/GraphicsLayer','esri/Graphic',
-        'esri/widgets/ScaleBar','esri/widgets/Swipe'],
-      (esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe)=>{
-        clearTimeout(wdRequire); wdRequire=null;
-        try{
-          sdk={esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,Graphic,ScaleBar,Swipe};
-          buildMap(v);
-        }catch(err){degrade('erro ao construir o mapa: '+((err&&err.message)||err))}
-      },(err)=>{
-        clearTimeout(wdRequire); wdRequire=null;
-        degrade('módulo recusado: '+((err&&err.message)||'erro no loader'));
-      });
-    }catch(err){degrade('loader lançou exceção: '+((err&&err.message)||err))}
+  function basemapFrom(M,id){
+    const b=BASEMAPS[id]||BASEMAPS.dark;
+    const layers=[new M.TileLayer({url:b.base})];
+    if(b.ref)layers.push(new M.TileLayer({url:b.ref}));
+    return new M.Basemap({baseLayers:layers,title:b.n});
+  }
+  function setBasemap(id){
+    basemapId=id;
+    if(ready&&map){try{map.basemap=basemapFrom(sdk,id)}catch(e){}}
+    APP.rerender();
   }
 
-  function buildMap(v){
-    const {esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,ScaleBar}=sdk;
-    esriConfig.applicationName='HidroClima Brasil — Radar das Águas (mockup)';
-    // Em iframe de origem opaca o IdentityManager acessa storage e lança SecurityError.
-    try{esriConfig.request.useIdentity=false}catch(e){}
-    try{esriConfig.request.timeout=14000}catch(e){}
-    try{esriConfig.assetsPath='https://js.arcgis.com/'+v+'/esri/'}catch(e){}
-    if(apiKey){try{esriConfig.apiKey=apiKey}catch(e){}}
+  function buildMap(){
+    const M=sdk, {esriConfig,Map,MapView,TileLayer,MapImageLayer,FeatureLayer,GraphicsLayer,ScaleBar}=M;
+    try{esriConfig.request.timeout=30000}catch(e){}
 
-    map=new Map({basemap: apiKey?'arcgis/dark-gray':'osm'});
+    map=new Map({basemap:basemapFrom(M,basemapId)});
 
     LAYERS.filter(l=>l.url).forEach(cfg=>{
       let lyr;
@@ -1841,7 +1841,8 @@ const MAPS=(()=>{
       try{
         if(cfg.tipo==='tile')lyr=new TileLayer(Object.assign({url:cfg.url},common));
         else if(cfg.tipo==='mapimage')lyr=new MapImageLayer(Object.assign({url:cfg.url},common));
-        else if(cfg.tipo==='feature')lyr=new FeatureLayer(Object.assign({url:cfg.url,outFields:['*']},common));
+        else if(cfg.tipo==='feature')lyr=new FeatureLayer(Object.assign({url:cfg.url,outFields:['*'],
+          popupTemplate:{title:cfg.nome,content:[{type:'fields'}]}},common));
       }catch(e){LAYER_HEALTH[cfg.id]={status:'offline',ms:null,msg:'construção falhou'};return}
       if(!lyr)return;
       const t0=performance.now();
@@ -1862,23 +1863,131 @@ const MAPS=(()=>{
       LAYER_HEALTH[id]={status:'ok',ms:2,msg:'fixture local'};
     });
 
-    view=new MapView({map,center:[-51.24,-30.03],zoom:9,
-      constraints:{rotationEnabled:false,minZoom:3},
-      ui:{components:['zoom','attribution']},
-      popup:{dockEnabled:false,defaultPopupTemplateEnabled:true}});
+    // contêiner persistente: é movido entre as telas, nunca recriado
+    viewHost=document.createElement('div');
+    viewHost.className='esrimap';
+    viewHost.style.cssText='position:absolute;inset:0';
 
-    wdView=setTimeout(()=>degrade('MapView não inicializou em 15 s (provável bloqueio de WebAssembly ou WebGL)'),15000);
+    view=new MapView({container:viewHost,map,center:[-51.24,-30.03],zoom:9,
+      constraints:{snapToZoom:false,minZoom:3,maxZoom:18,rotationEnabled:false},
+      ui:{components:['zoom','attribution']},
+      popup:{dockEnabled:false,collapseEnabled:false,defaultPopupTemplateEnabled:true}});
+
+    wdView=setTimeout(()=>degrade('MapView não inicializou em 25 s'),25000);
     view.when(()=>{
       clearTimeout(wdView); wdView=null;
       ready=true; engine='arcgis';
-      note('sdk','MapView pronto');
-      try{view.ui.add(new ScaleBar({view,unit:'metric'}),'bottom-left')}catch(e){}
+      note('sdk','MapView pronto · basemap '+BASEMAPS[basemapId].n);
+      try{view.ui.add(new ScaleBar({view,unit:'metric',style:'line'}),'bottom-right')}catch(e){}
+      try{view.popupEnabled=true}catch(e){}
+      wireIdentify(view);
       drawLocal(true);
       waiters.splice(0).forEach(f=>{try{f(view)}catch(e){}});
       BUS.emit('integration.sla.breached',{},
-        {text:`ArcGIS Maps SDK ${v} inicializado · basemap ${apiKey?'arcgis/dark-gray':'osm (anônimo)'}`,sev:'normal',mod:'M17'});
+        {text:`ArcGIS Maps SDK 4.30 inicializado · ${esc(BASEMAPS[basemapId].n)} · serviços públicos, sem chave`,sev:'normal',mod:'M17'});
       APP.rerender();
     },(err)=>degrade('MapView rejeitou: '+((err&&err.message)||'erro')));
+  }
+
+  /* Identify: o clique consulta as feições sob o cursor e leva o registro ao
+     painel direito. O arraste continua sendo navegação — são gestos distintos. */
+  const LOOKUP={
+    'LY-REDE':a=>({type:'estacao',data:ESTACOES.find(e=>e.codigo===a['Código'])}),
+    'LY-REC':a=>({type:'receptor',data:RECEPTORES.find(r=>r.nome===a['Receptor'])}),
+    'LY-RSV':a=>({type:'reservatorio',data:RESERVATORIOS.find(r=>r.nome===a['Reservatório'])}),
+    'LY-MUN':a=>({type:'municipio',data:MUNICIPIOS.find(m=>m.nome===a['Município'])})
+  };
+  function identifyGraphic(g){
+    const lid=g.layer&&g.layer.id, a=g.attributes||{};
+    let sel=null;
+    if(LOOKUP[lid]){const r=LOOKUP[lid](a); if(r&&r.data)sel=r}
+    if(!sel)sel={type:'feicao',data:a};
+    APP.selected=sel; APP.rightTab='detail'; APP.rightOpen=true;
+    BUS.emit('map.identify',{layer:lid},
+      {text:`Identificação no mapa — <b>${esc(a['Estação']||a['Receptor']||a['Reservatório']||a['Município']||a['Camada']||lid||'feição')}</b>`,
+       sev:'info',mod:APP.module});
+    APP.rerender();
+  }
+  /* MapImageLayer é desenhada no servidor: hitTest não a enxerga. A consulta
+     precisa ser um identify REST contra o MapServer, com tolerância em pixels. */
+  function identifyServices(mapPoint,v){
+    const alvo=LAYERS.filter(l=>(l.tipo==='mapimage')&&effectiveVis(null).has(l.id)&&
+      (LAYER_HEALTH[l.id]||{}).status!=='offline');
+    if(!alvo.length||!sdk.identifyRest||!sdk.IdentifyParameters)return Promise.resolve([]);
+    return Promise.all(alvo.map(cfg=>{
+      let params;
+      try{
+        params=new sdk.IdentifyParameters();
+        params.geometry=mapPoint;
+        params.mapExtent=v.extent;
+        params.width=v.width; params.height=v.height;
+        params.tolerance=8;
+        params.layerOption='visible';
+        params.returnGeometry=false;
+        params.spatialReference=v.spatialReference;
+      }catch(e){return Promise.resolve({cfg,erro:'parâmetros inválidos'})}
+      return sdk.identifyRest.identify(cfg.url,params)
+        .then(r=>({cfg,results:(r&&r.results)||[]}))
+        .catch(err=>({cfg,erro:(err&&(err.details&&err.details.httpStatus?'HTTP '+err.details.httpStatus:err.message))||'serviço não respondeu'}));
+    }));
+  }
+
+  function wireIdentify(v){
+    v.on('click',ev=>{
+      if(tool!=='identify')return;
+      const p=ev.mapPoint;
+      v.hitTest(ev).then(r=>{
+        const g=(r.results||[]).map(x=>x.graphic).filter(x=>x&&x.layer&&x.layer.id)[0];
+        if(g){identifyGraphic(g);return}
+        if(!p)return;
+        const alvos=LAYERS.filter(l=>l.tipo==='mapimage'&&effectiveVis(null).has(l.id));
+        if(!alvos.length){mostraCoordenada(p,v);return}
+        // consulta assíncrona aos MapServer da ANA/SNIRH
+        APP.selected={type:'identify',loading:true,ponto:[p.longitude,p.latitude],
+          consultando:alvos.map(a=>a.nome),grupos:[]};
+        APP.rightTab='detail'; APP.rightOpen=true; APP.rerender();
+        identifyServices(p,v).then(resp=>{
+          const grupos=[];
+          resp.forEach(rr=>{
+            if(rr.erro){grupos.push({servico:rr.cfg.nome,fonte:rr.cfg.fonte,erro:rr.erro,itens:[]});return}
+            const itens=(rr.results||[]).map(x=>({
+              camada:x.layerName||('sublayer '+x.layerId),
+              rotulo:x.value||x.displayFieldName||'',
+              attrs:x.feature&&x.feature.attributes?x.feature.attributes:{}}));
+            grupos.push({servico:rr.cfg.nome,fonte:rr.cfg.fonte,itens});
+          });
+          const n=grupos.reduce((a,g)=>a+g.itens.length,0);
+          APP.selected={type:'identify',loading:false,ponto:[p.longitude,p.latitude],grupos};
+          BUS.emit('map.identify',{},
+            {text:`Identify nos serviços ANA/SNIRH — <b>${n}</b> feição(ões) no ponto ${fmt(p.latitude,4)}, ${fmt(p.longitude,4)}`,
+             sev:n?'info':'atencao',mod:APP.module});
+          APP.rerender();
+        });
+      }).catch(()=>{ if(p)mostraCoordenada(p,v) });
+    });
+    function mostraCoordenada(p,v2){
+      APP.selected={type:'coordenada',data:{
+        Longitude:fmt(p.longitude,5),Latitude:fmt(p.latitude,5),
+        'Zoom':fmt(v2.zoom,1),'Instante':stamp(CLOCK.date()),
+        'Camadas visíveis':Array.from(effectiveVis(null)).length,
+        'Sistema de referência':'EPSG:4326 · WGS84'}};
+      APP.rightTab='detail'; APP.rightOpen=true; APP.rerender();
+    }
+    let lastMove=0;
+    v.on('pointer-move',ev=>{
+      const now=Date.now(); if(now-lastMove<110)return; lastMove=now;
+      if(tool!=='identify'){if(v.container)v.container.style.cursor='grab';return}
+      v.hitTest(ev).then(r=>{
+        const hit=(r.results||[]).some(x=>x.graphic&&x.graphic.layer&&x.graphic.layer.id);
+        if(v.container)v.container.style.cursor=hit?'pointer':'crosshair';
+      }).catch(()=>{});
+    });
+  }
+
+  function boot(){
+    note('sdk','resolvendo módulos do loader global (script estático 4.30)');
+    esriReady().then(()=>{try{buildMap()}catch(e){degrade('erro ao construir o mapa: '+((e&&e.message)||e))}})
+      .catch(err=>degrade((err&&err.message)||'SDK indisponível'));
   }
 
   /* ---------- camadas locais no modo ArcGIS ---------- */
@@ -1889,6 +1998,17 @@ const MAPS=(()=>{
     aoi:{type:'simple-fill',color:[25,211,232,.05],outline:{color:[25,211,232,.9],width:1.4,style:'dash'}}
   };
   function pt(color,size){return {type:'simple-marker',style:'circle',color,size:size||7,outline:{color:[6,13,19,.9],width:1}}}
+  /* content como função: o autocast de '{*}' não monta tabela para graphics */
+  function popupFor(titulo){
+    return {title:titulo,outFields:['*'],content:(ev)=>{
+      const a=(ev&&ev.graphic&&ev.graphic.attributes)||{};
+      const tr=Object.keys(a).map(k=>`<tr><td style="padding:3px 8px 3px 0;color:#75919F;white-space:nowrap">${esc(k)}</td>
+        <td style="padding:3px 0;color:#DCEAF3">${esc(String(a[k]))}</td></tr>`).join('');
+      const d=document.createElement('div');
+      d.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:'IBM Plex Sans',system-ui">${tr}</table>`;
+      return d;
+    }};
+  }
   function toPoly(rings){return {type:'polygon',rings:rings.map(r=>r.concat([r[0]])),spatialReference:{wkid:4326}}}
   function sevRGBA(s,a){
     const m={normal:[47,191,113],info:[53,184,240],atencao:[232,163,23],alerta:[255,133,52],critico:[255,74,95],modelado:[157,123,255]};
@@ -1904,21 +2024,21 @@ const MAPS=(()=>{
     L['LY-PREV'].add(new G({geometry:toPoly(f.prevRings),symbol:SYM.prev,
       attributes:{Camada:'Cenário Referencial de Inundação (previsto)',Versão:f.version,Nível:'N1',Classe:'C',
         'Área km²':fmt0(f.areaPrev),'Uso permitido':'Triagem e preparação — não autoriza projeto ou delimitação legal'},
-      popupTemplate:{title:'Cenário Referencial de Inundação',content:'{*}'}}));
+      popupTemplate:popupFor('Cenário Referencial de Inundação')}));
     L['LY-OBS'].removeAll();
     f.obsRings.forEach(r=>L['LY-OBS'].add(new G({geometry:toPoly([r]),symbol:SYM.obs,
       attributes:{Camada:'FloodWatch NRT — observado (sintético)',Versão:f.version,Aquisição:f.acqId,
         'Latência min':f.latency,'Cobertura %':f.coverage,QA:f.qa,'Área km²':fmt0(f.areaObs),Aviso:WM},
-      popupTemplate:{title:'Observação de inundação — '+WM,content:'{*}'}})));
+      popupTemplate:popupFor('Observação de inundação — '+WM)})));
     L['LY-DIV'].removeAll();
     f.obsRings.forEach(r=>L['LY-DIV'].add(new G({geometry:toPoly([r]),symbol:SYM.div,
       attributes:{Camada:'Divergência previsto × observado',IoU:fmt(f.iou*100,1)+'%',
         'Área surpresa km²':fmt0(Math.max(0,f.areaObs-f.areaPrev)),Natureza:'Hipótese — exige investigação'},
-      popupTemplate:{title:'Divergência',content:'{*}'}})));
+      popupTemplate:popupFor('Divergência')})));
     L['LY-AOI'].removeAll();
     L['LY-AOI'].add(new G({geometry:toPoly([expandRing(PLANICIE,1.9,0.02,1)]),symbol:SYM.aoi,
       attributes:{AOI:'AOI-RS-GUAIBA-01',Prioridade:'Alta',SLA:'contratual — não firmado',Status:'monitoramento ativo'},
-      popupTemplate:{title:'AOI de aquisição SAR',content:'{*}'}}));
+      popupTemplate:popupFor('AOI de aquisição SAR')}));
     if(L['LY-REDE'].graphics.length===0){
       ESTACOES.forEach(e=>{
         const c={online:[47,191,113],atrasada:[232,163,23],suspeita:[255,133,52],offline:[255,74,95]}[e.status]||[85,112,126];
@@ -1926,7 +2046,7 @@ const MAPS=(()=>{
           symbol:pt(c.concat([.95]),e.bacia==='BAC-GUAIBA'?9:6.5),
           attributes:{Código:e.codigo,Estação:e.nome,Tipo:e.tipo,Operador:e.operador,Status:e.status,
             'Latência min':e.latencia,'Bateria %':e.bateria,Classe:e.cls,'Curva-chave':e.curva},
-          popupTemplate:{title:'{Estação}',content:'{*}'}}));
+          popupTemplate:popupFor('{Estação}')}));
       });
     }
     if(L['LY-REC'].graphics.length===0){
@@ -1936,7 +2056,7 @@ const MAPS=(()=>{
           symbol:{type:'simple-marker',style:'square',color:rgb.concat([.9]),size:6,outline:{color:[6,13,19,.8],width:.8}},
           attributes:{Receptor:r.nome,Tipo:r.tipo,Município:r.municipio,Criticidade:r.criticidade,
             Classe:r.cls,'Cota limiar m':r.cota,Fonte:r.fonte},
-          popupTemplate:{title:'{Receptor}',content:'{*}'}}));
+          popupTemplate:popupFor('{Receptor}')}));
       });
     }
     if(L['LY-MUN'].graphics.length===0){
@@ -1946,7 +2066,7 @@ const MAPS=(()=>{
         L['LY-MUN'].add(new G({geometry:toPoly([ring]),
           symbol:{type:'simple-fill',color:sevRGBA(m.sev,.16),outline:{color:sevRGBA(m.sev,.9),width:1}},
           attributes:{Município:m.nome,UF:m.uf,'População':fmt0(m.pop),Severidade:m.sev},
-          popupTemplate:{title:'{Município}',content:'{*}'}}));
+          popupTemplate:popupFor('{Município}')}));
       });
     }
     if(L['LY-RSV'].graphics.length===0){
@@ -1954,7 +2074,7 @@ const MAPS=(()=>{
         symbol:{type:'simple-marker',style:'triangle',color:sevRGBA(r.sev,.95),size:12,outline:{color:[6,13,19,.9],width:1}},
         attributes:{Reservatório:r.nome,Rio:r.rio,UF:r.uf,'Volume útil %':r.volUtil,'Afluência m³/s':r.aflu,
           'Defluência m³/s':r.deflu,Regra:r.regra},
-        popupTemplate:{title:'{Reservatório}',content:'{*}'}})));
+        popupTemplate:popupFor('{Reservatório}')})));
     }
   }
 
@@ -1989,7 +2109,7 @@ const MAPS=(()=>{
     if(rOverride){rState={center:rOverride.center.slice(),zoom:rOverride.zoom};rKey=key;rOverride=null}
     else if(key!==rKey||!rState){rKey=key;rState={center:(cfg.center||[-51.24,-30.03]).slice(),zoom:cfg.zoom||9}}
     node.innerHTML='';
-    const cv=el('canvas',{style:'position:absolute;inset:0;display:block;cursor:grab;touch-action:none'});
+    const cv=el('canvas',{style:'position:absolute;inset:0;display:block;touch-action:none;cursor:'+(tool==='identify'?'crosshair':'grab')});
     node.appendChild(cv);
     const ctx=cv.getContext('2d');
     const hits=[];
@@ -2057,7 +2177,7 @@ const MAPS=(()=>{
         for(let i=0;i<H;i+=48){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(W,i);ctx.stroke()}
       }
 
-      const vis=(cfgAtual&&cfgAtual.layers)||LAYERS.filter(l=>l.on).map(l=>l.id);
+      const vis=Array.from(effectiveVis(null));
       const f=frameNow();
       function ring(r,fill,stroke,w){
         ctx.beginPath();
@@ -2133,15 +2253,23 @@ const MAPS=(()=>{
       schedule();
     });
     cv.addEventListener('pointerup',ev=>{
-      if(!dragging)return; dragging=false; cv.style.cursor='grab';
+      if(!dragging)return; dragging=false; cv.style.cursor=tool==='identify'?'crosshair':'grab';
       if(moved)return;
       const r=cv.getBoundingClientRect();
       const px=ev.clientX-r.left, py=ev.clientY-r.top;
+      if(tool!=='identify')return;
       let best=null,bd=1e9;
       hits.forEach(h=>{const d=(h.x-px)*(h.x-px)+(h.y-py)*(h.y-py);if(d<bd){bd=d;best=h}});
-      if(best&&bd<170){APP.selected={type:best.type,data:best.data};APP.rightTab='detail';APP.rightOpen=true;APP.rerender()}
+      if(best&&bd<170){APP.selected={type:best.type,data:best.data};APP.rightTab='detail';APP.rightOpen=true;APP.rerender();return}
+      const z=rState.zoom, r2=cv.getBoundingClientRect();
+      APP.selected={type:'coordenada',data:{
+        Longitude:fmt(unprojLng(projX(rState.center[0],z)-r2.width/2+px,z),5),
+        Latitude:fmt(unprojLat(projY(rState.center[1],z)-r2.height/2+py,z),5),
+        Zoom:z,Instante:stamp(CLOCK.date()),Motor:'raster',
+        'Sistema de referência':'EPSG:3857 · Web Mercator'}};
+      APP.rightTab='detail';APP.rightOpen=true;APP.rerender();
     });
-    cv.addEventListener('pointercancel',()=>{dragging=false;cv.style.cursor='grab'});
+    cv.addEventListener('pointercancel',()=>{dragging=false;cv.style.cursor=tool==='identify'?'crosshair':'grab'});
     cv.addEventListener('wheel',ev=>{
       ev.preventDefault();
       const r=cv.getBoundingClientRect();
@@ -2179,10 +2307,9 @@ const MAPS=(()=>{
       return;
     }
     node.innerHTML='';
-    const inner=el('div',{class:'esrimap'});
-    node.appendChild(inner);
-    try{ view.container=inner; }catch(e){ degrade('não foi possível anexar o MapView'); return; }
+    try{ node.appendChild(viewHost); }catch(e){ degrade('não foi possível anexar o MapView'); return; }
     applyVis(cfg.layers);
+    try{ viewHost.style.cursor = tool==='identify'?'crosshair':'grab'; }catch(e){}
     if(cfg.center){try{view.goTo({center:cfg.center,zoom:cfg.zoom||9},{duration:600}).catch(()=>{})}catch(e){}}
     if(swipeW){try{swipeW.destroy()}catch(e){};swipeW=null}
     if(cfg.swipe&&sdk.Swipe){
@@ -2192,33 +2319,29 @@ const MAPS=(()=>{
     drawLocal(true);
   }
   function applyVis(ids){
-    if(engine==='raster'){if(rRepaint)rRepaint();return}
-    if(!ready)return;
-    if(!ids){LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=!!l.on});return}
-    LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=ids.indexOf(l.id)>=0});
+    const set=effectiveVis(ids);
+    if(engine==='raster'){if(rRepaint)rRepaint();return set}
+    if(!ready)return set;
+    LAYERS.forEach(l=>{const ly=map.findLayerById(l.id);if(ly)ly.visible=set.has(l.id)});
+    return set;
   }
   function toggle(id){
     const cfg=LAYERS.find(l=>l.id===id); if(!cfg)return;
-    cfg.on=!cfg.on;
-    if(ready&&map){const ly=map.findLayerById(id);if(ly)ly.visible=cfg.on}
-    if(cfgAtual&&cfgAtual.layers){
-      if(cfg.on){if(cfgAtual.layers.indexOf(id)<0)cfgAtual.layers.push(id)}
-      else cfgAtual.layers=cfgAtual.layers.filter(x=>x!==id);
+    const set=effectiveVis(null);
+    visUser[id]=!set.has(id);              // a escolha do operador persiste entre re-renderizações
+    applyVis(null);
+    const on=visUser[id];
+    if(on&&cfg.url){
+      const h=LAYER_HEALTH[id]||{};
+      if(h.status==='offline')UI.toast('Camada indisponível',cfg.nome+' — '+(h.msg||'serviço não respondeu'),'warn');
     }
     if(engine==='raster'&&rRepaint)rRepaint();
     APP.rerender();
   }
-  function setKey(k){
-    apiKey=k||null;
-    if(ready&&sdk){
-      try{sdk.esriConfig.apiKey=apiKey}catch(e){}
-      try{map.basemap=apiKey?'arcgis/dark-gray':'osm'}catch(e){}
-      UI.toast('Chave ArcGIS aplicada','Basemap alternado. A chave permanece apenas em memória nesta sessão.','ok');
-    }else if(engine==='raster'){
-      UI.toast('Chave registrada','O motor raster não usa a chave. Use “recarregar o SDK” no painel de camadas.','warn');
-    }else UI.toast('Chave registrada','Será aplicada quando o SDK terminar de carregar.','ok');
-    APP.rerender();
-  }
+  function setTool(t){tool=t;
+    if(ready&&view&&view.container)view.container.style.cursor=t==='identify'?'crosshair':'grab';
+    APP.rerender()}
+
   function goTo(center,zoom){
     if(engine==='raster'){
       rState={center:center.slice(),zoom:zoom||10};
@@ -2230,14 +2353,36 @@ const MAPS=(()=>{
   }
   function retry(){
     if(engine==='arcgis')return;
-    engine='loading';ready=false;sdk=null;view=null;map=null;L={};lastFrame=-1;
+    engine='loading';ready=false;sdk=null;view=null;map=null;L={};lastFrame=-1;viewHost=null;
     note('sdk','recarregamento solicitado pelo operador');
     if(host)host.innerHTML='<div class="maploading">Recarregando ArcGIS Maps SDK…</div>';
     APP.rerender();
-    if(window.require&&window.__ARCGIS_V)init(window.__ARCGIS_V); else loadSDK(0);
+    boot();
+  }
+  /* Sonda direta dos endpoints: distingue "serviço fora do ar" de "SDK não
+     conseguiu construir a camada", que a mensagem do SDK costuma confundir. */
+  function probeServices(){
+    const alvos=LAYERS.filter(l=>l.url);
+    UI.toast('Testando serviços',alvos.length+' endpoints em verificação…','ai');
+    return Promise.all(alvos.map(cfg=>{
+      const t0=performance.now();
+      return fetch(cfg.url+'?f=json',{method:'GET',mode:'cors'})
+        .then(r=>r.ok?r.json().then(j=>({cfg,ms:Math.round(performance.now()-t0),
+              ok:!j.error,msg:j.error?('erro do serviço: '+(j.error.message||j.error.code)):
+                ((j.mapName||j.name||j.serviceDescription||'serviço respondeu')+
+                 (j.layers?' · '+j.layers.length+' camadas':''))}))
+            :({cfg,ms:Math.round(performance.now()-t0),ok:false,msg:'HTTP '+r.status}))
+        .catch(e=>({cfg,ms:Math.round(performance.now()-t0),ok:false,
+              msg:'inacessível pelo navegador (CORS, rede ou endpoint inexistente)'}));
+    })).then(res=>{
+      res.forEach(r=>{LAYER_HEALTH[r.cfg.id]={status:r.ok?'ok':'offline',ms:r.ms,msg:r.msg}});
+      const ok=res.filter(r=>r.ok).length;
+      UI.toast('Teste concluído',ok+' de '+res.length+' serviços responderam. Detalhes no diagnóstico.',ok===res.length?'ok':'warn');
+      APP.rerender(); return res;
+    });
   }
   function engineLabel(){
-    if(engine==='arcgis')return 'ArcGIS SDK '+(window.__ARCGIS_V||'');
+    if(engine==='arcgis')return 'ArcGIS SDK 4.30';
     if(engine==='raster')return 'motor raster';
     return 'carregando…';
   }
@@ -2247,8 +2392,8 @@ const MAPS=(()=>{
     else if(engine==='raster'&&rRepaint&&frameNow().i!==lastFrame){lastFrame=frameNow().i;rRepaint()}
   });
 
-  loadSDK(0);
-  return {mount,toggle,setKey,goTo,applyVis,retry,engineLabel,
+  boot();
+  return {mount,toggle,goTo,applyVis,retry,engineLabel,setBasemap,setTool,probeServices,tool:()=>tool,visible:()=>effectiveVis(null),basemaps:()=>BASEMAPS,basemapId:()=>basemapId,
     isReady:()=>ready, isFailed:()=>engine==='raster', engine:()=>engine,
     diag:()=>diag, view:()=>view};
 })();
@@ -2261,14 +2406,23 @@ function mapBlock(o){
     const n=document.getElementById(id); if(!n)return;
     MAPS.mount(n,{center:o.center,zoom:o.zoom,layers:o.layers,swipe:o.swipe});
     $$('.lyr[data-ly]').forEach(b=>b.onclick=()=>MAPS.toggle(b.dataset.ly));
-    const kb=$('#applyKey'); if(kb)kb.onclick=()=>{const v=$('#keyInput').value.trim();MAPS.setKey(v)};
+    $$('.lyr[data-bm]').forEach(b=>b.onclick=()=>MAPS.setBasemap(b.dataset.bm));
     const rb=$('#retrySdk'); if(rb)rb.onclick=()=>MAPS.retry();
+    $$('#mapTool button[data-tool]').forEach(b=>b.onclick=()=>MAPS.setTool(b.dataset.tool));
+    const av=$('#allVis'); if(av)av.onclick=()=>{
+      LAYERS.filter(l=>l.grupo!=='Contexto').forEach(l=>{if(!MAPS.visible().has(l.id))MAPS.toggle(l.id)})};
     const db=$('#diagBtn'); if(db)db.onclick=()=>UI.modal('Diagnóstico do motor geoespacial',
       `<div class="doc" style="font-size:11.5px">
         <p>Motor ativo: <b>${esc(MAPS.engineLabel())}</b>.</p>
         <h4>Registro de inicialização</h4>
         <div class="tool">${MAPS.diag().map(d=>
           `<span class="to"><span style="color:var(--faint)">${hhmm(d.t)}</span> <span class="tn">${esc(d.kind)}</span> ${esc(d.msg)}</span>`).join('')||'<span class="to">sem registros</span>'}</div>
+        <h4>Serviços externos</h4>
+        <table class="tbl"><tbody>${LAYERS.filter(l=>l.url).map(l=>{const h=LAYER_HEALTH[l.id]||{};
+          return `<tr style="cursor:default"><td style="width:34%">${esc(l.nome)}</td>
+            <td><span class="mono tiny faint">${esc(l.url.replace('https://',''))}</span></td>
+            <td style="white-space:nowrap">${UI.statusDot(h.status)} <span class="tiny">${esc(h.msg||h.status||'—')}</span></td></tr>`}).join('')}
+        </tbody></table>
         <h4>Por que o SDK pode não iniciar em uma página publicada</h4>
         <ul>
           <li><b>CSP sem <code>wasm-unsafe-eval</code></b> em <code>script-src</code> — o SDK usa WebAssembly e o MapView não inicializa.</li>
@@ -2283,16 +2437,25 @@ function mapBlock(o){
         desenhadas em canvas 2D. Arraste para deslocar, use a roda para o zoom e clique em um ponto para inspecioná-lo
         no painel direito. A jornada permanece completa.</p>
       </div>`,
-      `<button class="btn btn-p" onclick="MAPS.retry();UI.closeModal()">Tentar recarregar o SDK</button>`);
+      `<button class="btn" onclick="MAPS.probeServices()">Testar endpoints</button>
+       <button class="btn btn-p" onclick="MAPS.retry();UI.closeModal()">Tentar recarregar o SDK</button>`);
   },0);
-  const shown=o.layers||LAYERS.filter(l=>l.on).map(l=>l.id);
+  const shown=Array.from(MAPS.visible());
   const grupos={};
   LAYERS.forEach(l=>{ if(o.only&&o.only.indexOf(l.id)<0)return; (grupos[l.grupo]=grupos[l.grupo]||[]).push(l)});
   const f=frameNow();
   const eng=MAPS.engine();
   return `<div class="mapwrap" style="${o.style||'height:100%'}">
     <div id="${id}" style="position:absolute;inset:0"></div>
-    <div class="map-ov ov-tl">
+    <div class="map-ov ov-tl" style="display:flex;flex-direction:column;gap:7px">
+      <div class="mpanel">
+        <div class="mb" style="padding:5px 6px">
+          <span class="seg" id="mapTool">
+            <button data-tool="identify" class="${MAPS.tool()==='identify'?'on':''}" title="Clique em uma feição para ver os atributos">⌖ Identificar</button>
+            <button data-tool="pan" class="${MAPS.tool()==='pan'?'on':''}" title="Somente navegação">✥ Navegar</button>
+          </span>
+        </div>
+      </div>
       <div class="mpanel" style="width:252px">
         <div class="mh">Camadas
           ${eng==='arcgis'?UI.statusDot('ok'):eng==='raster'?UI.statusDot('atencao'):UI.statusDot('idle')}
@@ -2309,6 +2472,10 @@ function mapBlock(o){
                 <span class="sw"></span><span class="nm">${esc(l.nome)}</span>
                 <span class="st" style="background:${h.status==='ok'?'var(--normal)':h.status==='carregando'?'var(--atencao)':h.status==='offline'?'var(--critico)':'var(--semdados)'}"></span>
               </div>`}).join('')}`).join('')}
+        </div>
+        <div class="card-f" style="padding:5px 9px;border-top:1px solid var(--line)">
+          <span class="tiny faint">${shown.length} de ${LAYERS.length} visíveis</span>
+          <button id="allVis" class="tiny" style="margin-left:auto;color:var(--hidro);text-decoration:underline">ligar operacionais</button>
         </div>
       </div>
     </div>
@@ -2327,10 +2494,12 @@ function mapBlock(o){
           IoU ${fmt(f.iou*100,1)}% · cobertura ${fmt(f.coverage,1)}%</div>
         </div></div>`}
       ${eng==='arcgis'?`<div class="mpanel" style="width:216px">
-        <div class="mh">Chave ArcGIS</div>
+        <div class="mh">Mapa base</div>
         <div class="mb">
-          <div class="tiny faint mb6">Opcional. Sem chave o mapa opera com basemap <b>osm</b> anônimo. A chave fica só em memória e nunca é gravada.</div>
-          <div class="flexr"><input class="inp" id="keyInput" placeholder="ARCGIS_API_KEY" style="flex:1;min-width:0"><button class="btn btn-sm btn-p" id="applyKey">Aplicar</button></div>
+          ${Object.keys(MAPS.basemaps()).map(k=>`<div class="lyr ${MAPS.basemapId()===k?'on':''}" data-bm="${k}">
+            <span class="sw"></span><span class="nm">${esc(MAPS.basemaps()[k].n)}</span></div>`).join('')}
+          <div class="tiny faint" style="margin-top:5px;line-height:1.4">Serviços públicos do ArcGIS Online.
+          Sem chave, sem conta de desenvolvedor e sem consumo de créditos.</div>
         </div></div>`:''}
     </div>
     ${o.noWatermark?'':`<div class="wm">${WM}</div>`}
@@ -2461,7 +2630,8 @@ const Shell=(()=>{
   function topbar(){
     const d=CLOCK.date(), f=frameNow();
     const crit=STORE.alerts.filter(a=>a.sev==='critico'&&a.status!=='fechado').length;
-    const pend=STORE.approvals.filter(a=>a.status==='pendente').length+4;
+    const pend=STORE.approvals.filter(a=>a.status==='pendente').length;
+    const fl=AGENTS.stats();
     $('#topbar').innerHTML=`
       <div class="brand">${brandSVG()}<div class="brand-txt">
         <div class="t1">HIDROCLIMA BRASIL</div><div class="t2">Radar das Águas · ANA</div></div></div>
@@ -2473,6 +2643,9 @@ const Shell=(()=>{
       <button class="tb-btn ${crit?'':''}" id="btnAlerts" style="${crit?'border-color:var(--critico);color:var(--critico);background:var(--c-bg)':''}">
         ▲ ${crit} críticos</button>
       <button class="tb-btn" id="btnAppr" style="border-color:var(--atencao);color:var(--atencao);background:var(--a-bg)">✓ ${pend} aprovações</button>
+      <button class="tb-btn" id="btnFleet" title="Frota de agentes"
+        style="${fl.running?'border-color:var(--modelado);color:#C6B2FF;background:var(--m-bg)':''}">
+        ${fl.running?'<span class="pulse"></span>':'◈'} ${fl.running} agentes${fl.queued?' · '+fl.queued+' na fila':''}</button>
       <div class="clock" title="Relógio do cenário">
         <span class="d">${ddmm(d)}</span> ${hhmm(d)} <span class="d">BRT · h+${fmt(CLOCK.hour(),1)}</span>
       </div>
@@ -2482,6 +2655,7 @@ const Shell=(()=>{
     $('#btnPal').onclick=()=>togglePalette(true);
     $('#btnAlerts').onclick=()=>APP.go('M0-03');
     $('#btnAppr').onclick=()=>APP.go('M18-03');
+    $('#btnFleet').onclick=()=>APP.go('M18-01');
     $('#btnRight').onclick=()=>{APP.rightOpen=!APP.rightOpen;APP.rerender()};
     $('#globalsearch').onfocus=()=>togglePalette(true);
   }
@@ -2526,6 +2700,7 @@ const Shell=(()=>{
   function sidebar(){
     const m=modulo(APP.module), scr=SCREENS[APP.module]||[];
     const hs=healthSummary();
+    const fleetAtivos=AGENTS.fleet().filter(f=>f.status!=='ocioso');
     $('#sidebar').innerHTML=`
       <div class="side-head">
         <div class="mid">${esc(m.id)} · ${esc(m.curto)}</div>
@@ -2538,15 +2713,27 @@ const Shell=(()=>{
           <span class="sid">${esc(s.id)}</span><span style="flex:1;min-width:0">${esc(s.nome)}</span>
           ${s.badge?`<span class="badge ${sevClass(s.badge[1])}">${esc(s.badge[0])}</span>`:''}</button>`).join('')}
         <div class="side-sec">Agentes deste módulo</div>
-        ${m.agentes.map(a=>{const ag=agente(a);return `<button class="side-item" data-ag="${a}">
+        ${m.agentes.map(a=>{const ag=agente(a);
+          const fa=fleetAtivos.find(f=>f.a.id===a);
+          return `<button class="side-item ${fa?'on':''}" data-ag="${a}">
           <span class="sid">${a}</span><span style="flex:1;min-width:0">${esc(ag.nome)}</span>
-          <span class="dot" style="background:${ag.gate?'var(--atencao)':'var(--normal)'}" title="${ag.gate?'exige gate humano':'sem gate'}"></span></button>`}).join('')}
+          ${fa?`<span class="badge ${fa.status==='gate'?'b-atencao':'b-hidro'}">${esc(AGENTS.statusLabel(fa.status))}</span>`
+             :`<span class="dot" style="background:${ag.gate?'var(--atencao)':'var(--normal)'}" title="${ag.gate?'exige gate humano':'sem gate'}"></span>`}
+          </button>`}).join('')}
         <div class="side-sec">Atalhos de contexto</div>
         <button class="side-item" data-s="M12-01"><span class="sid">M12-01</span><span>Sala de crise ativa</span><span class="badge b-critico">2</span></button>
         <button class="side-item" data-s="M18-03"><span class="sid">M18-03</span><span>Aprovações pendentes</span><span class="badge b-atencao">${STORE.approvals.filter(a=>a.status==='pendente').length+4}</span></button>
         <button class="side-item" data-s="M16-05"><span class="sid">M16-05</span><span>Auditoria e linhagem</span></button>
       </nav>
       <div class="side-foot">
+        <div class="hstat"><span class="lab">Frota de agentes</span>
+          <span class="mono" style="color:${fleetAtivos.length?'var(--modelado)':'var(--muted)'}">${fleetAtivos.length} ativos</span></div>
+        <div class="flexr" style="gap:3px;flex-wrap:wrap;min-height:17px">
+          ${fleetAtivos.length?fleetAtivos.slice(0,9).map(f=>`<button class="badge ${f.status==='gate'?'b-atencao':'b-modelado'}"
+            title="${esc(f.a.nome)} — ${esc(AGENTS.statusLabel(f.status))}${f.step?': '+esc(f.step):''}"
+            data-runsel="${f.run?f.run.id:''}">${f.a.id}</button>`).join('')
+            :'<span class="tiny faint">frota ociosa — aguardando gatilho</span>'}
+        </div>
         <div class="hstat"><span class="lab">Rede online</span><span class="mono">${hs.on}/${ESTACOES.length}</span></div>
         ${UI.prog(hs.on/ESTACOES.length*100,'var(--normal)')}
         <div class="hstat"><span class="lab">Fontes íntegras</span><span class="mono">${hs.cnOk}/${CONNECTORS.length}</span></div>
@@ -2555,6 +2742,8 @@ const Shell=(()=>{
       </div>`;
     $$('#sidebar [data-s]').forEach(b=>b.onclick=()=>APP.go(b.dataset.s));
     $$('#sidebar [data-ag]').forEach(b=>b.onclick=()=>{APP.selected={type:'agent',data:agente(b.dataset.ag)};APP.rightTab='agent';APP.rightOpen=true;APP.rerender()});
+    $$('#sidebar [data-runsel]').forEach(b=>b.onclick=()=>{
+      if(b.dataset.runsel)AGENTS.setActive(b.dataset.runsel); else APP.go('M18-01')});
   }
   function healthSummary(){
     return {on:ESTACOES.filter(e=>e.status==='online').length,
@@ -2607,19 +2796,24 @@ const Shell=(()=>{
       <div>Clique em uma linha de tabela, em um ponto do mapa ou em um card para inspecionar detalhes, fontes e linhagem.</div></div></div>
       ${contextSummary()}`;
     if(s.type==='agent'){APP.rightTab='agent';return AGENTS.panel()}
-    const d=s.data, cols=s.cols||[];
-    const keys=Object.keys(d).filter(k=>typeof d[k]!=='object'&&typeof d[k]!=='function').slice(0,26);
-    return `<div class="rp-sec"><div class="t">Registro selecionado</div>
-      <div class="disp" style="font-size:16px;margin-bottom:6px">${esc(d.nome||d.titulo||d.id||'Registro')}</div>
+    if(s.type==='identify')return identifyPanel(s);
+    const d=s.data||{}, cols=s.cols||[];
+    const keys=Object.keys(d).filter(k=>typeof d[k]!=='object'&&typeof d[k]!=='function').slice(0,30);
+    const TIPOS={estacao:'Estação hidrometeorológica',receptor:'Receptor exposto',reservatorio:'Reservatório',
+      municipio:'Município',feicao:'Feição do mapa',coordenada:'Posição no mapa',row:'Registro'};
+    const titulo=d.nome||d.titulo||d.Estação||d.Receptor||d['Reservatório']||d['Município']||d.Camada||d.id||
+      (s.type==='coordenada'?'Coordenada consultada':'Registro');
+    return `<div class="rp-sec"><div class="t">${esc(TIPOS[s.type]||'Registro selecionado')}</div>
+      <div class="disp" style="font-size:16px;margin-bottom:6px">${esc(titulo)}</div>
       <dl class="kv">${keys.map(k=>`<dt>${esc(k)}</dt><dd>${esc(String(d[k] instanceof Date?stamp(d[k]):d[k]))}</dd>`).join('')}</dl></div>
-      <div class="rp-sec"><div class="t">Proveniência</div>
+      ${s.type==='coordenada'?'':`<div class="rp-sec"><div class="t">Proveniência</div>
         <dl class="kv">
           <dt>Origem</dt><dd>${esc(d.source||d.fonte||'fixture determinística')}</dd>
           <dt>Simulado</dt><dd><span class="badge b-modelado">sim · seed ${SEED}</span></dd>
           <dt>Classe</dt><dd>${UI.clsBadge(d.cls||d.conf||'C')}</dd>
           <dt>Captura</dt><dd class="mono">${stamp(CLOCK.date())}</dd>
           <dt>Licença</dt><dd>${esc(d.lic||'uso interno — mockup')}</dd>
-        </dl></div>
+        </dl></div>`}
       <div class="rp-sec"><div class="t">Ações</div>
         <div class="flexc">
           <button class="btn" data-goto="M16-05">Abrir linhagem completa</button>
@@ -2627,6 +2821,58 @@ const Shell=(()=>{
           <button class="btn" data-goto="M11-05">Gerar dossiê territorial</button>
         </div></div>`;
   }
+  /* Resultado do identify nos serviços ArcGIS da ANA/SNIRH */
+  function identifyPanel(s){
+    const pt=s.ponto?`${fmt(s.ponto[1],5)}, ${fmt(s.ponto[0],5)}`:'—';
+    if(s.loading)return `<div class="rp-sec"><div class="t">Identify em serviços ANA/SNIRH</div>
+      <div class="tiny faint mono mb6">ponto ${pt}</div>
+      ${(s.consultando||[]).map(n=>`<div class="flexr" style="padding:4px 0;font-size:11.5px">
+        <span class="dot" style="background:var(--atencao)"></span><span style="flex:1">${esc(n)}</span>
+        <span class="tiny faint">consultando…</span></div>`).join('')}
+      <div class="skel mt10" style="width:70%"></div><div class="skel mt6" style="width:52%"></div></div>`;
+    const total=(s.grupos||[]).reduce((a,g)=>a+g.itens.length,0);
+    return `<div class="rp-sec">
+      <div class="t">Identify em serviços ANA/SNIRH</div>
+      <div class="tiny faint mono mb6">ponto ${pt} · ${total} feição(ões)</div>
+      ${(s.grupos||[]).map(g=>`
+        <div class="card" style="margin-bottom:8px">
+          <div class="card-h" style="padding:6px 9px">
+            <h3 style="font-size:11.5px">${esc(g.servico)}</h3>
+            ${g.erro?UI.badge('sem resposta','critico'):UI.badge(g.itens.length+' feições',g.itens.length?'normal':'semdados')}
+          </div>
+          <div class="card-b" style="padding:8px">
+            ${g.erro?`<div class="limit">Consulta recusada: ${esc(g.erro)}.<br>
+                <span class="tiny">Serviços de terceiros podem publicar a imagem do mapa e ainda assim bloquear a
+                operação <span class="mono">identify</span> por CORS ou por configuração. A camada continua sendo
+                exibida; apenas a consulta de atributos fica indisponível.</span></div>`
+              :(g.itens.length?g.itens.map(it=>`
+                <div style="margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid var(--line)">
+                  <div class="flexr mb6"><span class="badge b-info">${esc(it.camada)}</span>
+                    ${it.rotulo?`<b class="tiny">${esc(it.rotulo)}</b>`:''}</div>
+                  <dl class="kv">${Object.keys(it.attrs).slice(0,18).map(k=>
+                    `<dt>${esc(k)}</dt><dd>${esc(String(it.attrs[k]))}</dd>`).join('')}</dl>
+                </div>`).join('')
+              :`<div class="tiny faint">Nenhuma feição deste serviço no ponto consultado.</div>`)}
+          </div>
+          <div class="card-f"><span class="src">fonte: ${esc(g.fonte||'ANA/SNIRH')}</span>
+            <span class="src">consulta: identify REST</span></div>
+        </div>`).join('')}
+      ${total===0&&!(s.grupos||[]).some(g=>g.erro)?
+        `<div class="sticky-note">Nenhuma feição no ponto. Amplie o zoom, ligue mais camadas do grupo ANA/SNIRH
+         no painel do mapa ou clique sobre um curso d'água ou divisor de bacia.</div>`:''}
+    </div>
+    <div class="rp-sec"><div class="t">Camadas consultáveis</div>
+      ${LAYERS.filter(l=>l.grupo==='ANA/SNIRH').map(l=>{const h=LAYER_HEALTH[l.id]||{};
+        const vis=MAPS.visible().has(l.id);
+        return `<div class="flexr" style="padding:4px 0;border-bottom:1px solid var(--line);font-size:11px">
+          ${UI.statusDot(h.status)}<span style="flex:1">${esc(l.nome)}</span>
+          ${UI.badge(vis?'visível':'oculta',vis?'normal':'semdados')}
+          <span class="tiny faint">${l.tipo==='mapimage'?'identify REST':'clique direto'}</span></div>`}).join('')}
+      <div class="tiny faint mt6">Camadas <b>feature</b> respondem ao clique diretamente. Camadas <b>map image</b> são
+      desenhadas no servidor e exigem a consulta REST acima.</div>
+    </div>`;
+  }
+
   function contextSummary(){
     const f=frameNow(), inc=incidente(CTX.incidentId);
     return `<div class="rp-sec"><div class="t">Quadro atual</div>
@@ -2824,262 +3070,444 @@ const Shell=(()=>{
 <script>
 /* ============================================================================
    ORQUESTRAÇÃO DE AGENTES (M18) — contrato de execução do PRD §10.2
-   Separação obrigatória: fato · inferência · hipótese · recomendação · ação.
-   Nenhum agente publica, assina, sanciona, opera estrutura ou promove modelo.
+   A frota é autônoma: os agentes são despachados por gatilhos do barramento e
+   avançam no relógio do cenário, de modo que a velocidade (1×–20×) e o replay
+   também governam a execução. Separação obrigatória entre fato, inferência,
+   hipótese, recomendação e ação. Nenhum agente publica, assina, sanciona,
+   opera estrutura ou promove modelo.
    ========================================================================== */
-const AGENTS=(()=>{
-  let runs=[]; let activeRun=null; let timer=null;
 
-  /* Planos pré-definidos por agente (determinísticos e auditáveis) */
+/* ---------- dicionário de ferramentas (deny-by-default, allowlist por agente) */
+const TOOLS={
+  'context.read':['Ler contexto operacional','Recuperar território, janela, evento, fidelidade e classificação vigentes.','{scope:"event",id:"INC-2026-0417"}','contexto íntegro · 6 dimensões carregadas'],
+  'event.query':['Consultar registro de eventos','Buscar incidentes ativos e correlatos no registro único.','{status:"ativo",rh:["RH-ATS","RH-URU"]}','8 incidentes · 2 em nível 4'],
+  'agent.dispatch':['Despachar agentes especializados','Distribuir subtarefas conforme competência e allowlist.','{agents:["A12","A13","A14"]}','3 execuções enfileiradas'],
+  'task.create':['Criar tarefa operacional','Registrar tarefa com responsável, SLA e evidência de origem.','{team:"Operações",sla:"6h"}','tarefa criada com responsável nominal'],
+  'dataset.profile':['Perfilar dataset','Medir completude, domínio, unidade e distribuição.','{ds:"DS-TELE",window:"24h"}','18.204 registros · 2 colunas fora de domínio'],
+  'schema.validate':['Validar schema','Confrontar o payload com o contrato canônico registrado.','{contract:"Observation.v3"}','conformidade 96,8% · 1 conversão de unidade'],
+  'topology.check':['Verificar topologia','Geometria válida, conectividade e ausência de auto-interseção.','{layer:"BHO6"}','99,4% válidas · 41 feições anotadas'],
+  'score.compute':['Calcular score de confiança','Aplicar pesos e a regra de teto por lacuna crítica.','{weights:"padrão"}','score 71,4 · classe C por teto de batimetria'],
+  'lineage.trace':['Reconstruir linhagem','Percorrer inputs, versões e transformações até o uso.','{target:"DR-2026-0222"}','grafo com 8 nós · íntegro'],
+  'registry.read':['Ler registros','Consultar catálogos de dados, modelos e agentes.','{registries:["data","model","agent"]}','52 ativos com dono declarado'],
+  'audit.read':['Ler trilha de auditoria','Recuperar eventos append-only correlacionados.','{corr:"INC-2026-0417"}','214 registros · nenhuma lacuna'],
+  'series.read':['Ler séries temporais','Recuperar leituras brutas e qualificadas no período.','{window:"24h",stations:18}','18 séries · 12 gaps identificados'],
+  'neighbor.compare':['Comparar com a vizinhança','Consistência espacial contra estações próximas.','{radius:"45 km"}','inconsistência em 4 de 5 pontos'],
+  'model.compare':['Confrontar com o modelo','Resíduo entre leitura observada e hidrograma simulado.','{model:"MD-MGB-ATS"}','resíduo médio 0,31 m'],
+  'ticket.create':['Abrir ticket','Gerar ordem de manutenção com evidência anexada.','{priority:"alta"}','5 tickets criados'],
+  'raster.zonal':['Estatística zonal','Agregar a grade de chuva por bacia e sub-bacia.','{zones:"BHO6 nível 4"}','412 sub-bacias processadas'],
+  'ensemble.read':['Ler ensemble','Recuperar membros e metadados da rodada vigente.','{members:12}','12 membros · dispersão alta'],
+  'threshold.eval':['Avaliar limiares','Testar as regras operacionais configuradas.','{rules:6}','4 de 6 limiares rompidos'],
+  'forcing.publish':['Publicar forçante','Congelar a grade de chuva como versão imutável.','{version:"FORC-2026-0823-14"}','forçante publicada e imutável'],
+  'model.registry':['Consultar registro de modelos','Verificar versão, skill, status e uso permitido.','{basin:"BAC-GUAIBA"}','MD-MGB-ATS v3.2.1 · produção'],
+  'job.submit':['Submeter execução','Enfileirar job com inputs congelados e seed.','{members:12,seed:20260823}','job HYD-RS-0914 enfileirado'],
+  'metrics.compute':['Calcular métricas','NSE, KGE, PBIAS e erro no pico.','{metrics:4}','NSE 0,84 · PBIAS −4,2%'],
+  'geometry.read':['Ler geometria hidráulica','Seções, estruturas e malha do domínio.','{reach:"TR-GUAIBA-01"}','14 seções · 5 medidas, 9 inferidas'],
+  'solver.submit':['Submeter ao solver','Executar o esquema numérico no domínio preparado.','{scheme:"2D",dt:"adaptativo"}','1,84 M células ativas'],
+  'stability.check':['Verificar estabilidade','Courant, balanço de massa e oscilação numérica.','{}','Courant máx 0,74 · erro de massa 0,08%'],
+  'product.package':['Empacotar produtos','Reunir saídas, metadados e limitações de uso.','{vars:5}','pacote com 5 variáveis e memorial'],
+  'ensemble.stats':['Estatística do ensemble','Percentis, dispersão e concordância entre membros.','{}','p25 5,12 m · p75 5,48 m'],
+  'percentile.compute':['Calcular percentis','Faixas probabilísticas para comunicação.','{q:[10,25,50,75,90]}','5 percentis calculados'],
+  'skill.read':['Ler skill histórico','Desempenho por modelo, bacia e evento.','{}','IoU médio 0,73 em 4 eventos'],
+  'dem.sample':['Amostrar terreno','Extrair perfis e cotas do modelo digital condicionado.','{dem:"COP30 condicionado"}','482 tiles amostrados'],
+  'section.infer':['Inferir seções','Geometria hidráulica regional onde não há batimetria.','{method:"regional"}','9 seções inferidas e rotuladas'],
+  'survey.search':['Buscar levantamentos','Procurar topobatimetria disponível no acervo.','{radius:"25 km"}','2 levantamentos · 2011 e 2019'],
+  'aoi.read':['Ler AOI','Recuperar geometria, prioridade e janela do evento.','{aoi:"AOI-RS-GUAIBA-01"}','3.480 km² · prioridade alta'],
+  'tasking.simulate':['Simular solicitação','Montar payload conforme o contrato lógico, sem envio.','{dryRun:true}','payload válido · nenhum pedido enviado'],
+  'product.ingest':['Ingerir produto','Receber a observação preservando tempos e proveniência.','{}','observação ingerida com watermark'],
+  'sla.track':['Acompanhar SLA','Registrar latência observada do produto recebido.','{}','latência do produto registrada'],
+  'raster.classify':['Classificar raster','Separar água, terra e área sem informação.','{}','classificação concluída · 7,6% sem dado'],
+  'waterbody.mask':['Mascarar corpos d’água','Remover lâminas permanentes da extensão detectada.','{}','máscara aplicada'],
+  'qa.score':['Pontuar qualidade','Cobertura, lacunas e confiança da observação.','{}','QA aceito · confiança C'],
+  'spatial.intersect':['Interseção espacial','Cruzar o perigo com o registro de exposição.','{layers:3}','receptores intersectados'],
+  'dependency.trace':['Propagar dependências','Encadear indisponibilidade entre ativos e serviços.','{depth:3}','3 ETA · 2 subestações · 7 travessias'],
+  'population.estimate':['Estimar população','Grade estatística e fator de ocupação, sempre rotulado.','{grid:"IBGE 2022"}','estimativa rotulada como estimativa'],
+  'priority.rank':['Ordenar prioridades','Severidade, criticidade, acesso e confiança do dado.','{weights:4}','ranking com justificativa'],
+  'raster.diff':['Diferença entre rasters','Harmonizar CRS e resolução e subtrair as extensões.','{res:"30 m"}','par válido · overlap de 42 min'],
+  'metrics.spatial':['Métricas espaciais','IoU, acerto, omissão, falso alarme e profundidade.','{}','métricas por trecho calculadas'],
+  'cluster.detect':['Detectar clusters','Agrupar divergências contíguas por severidade.','{method:"dbscan"}','3 clusters identificados'],
+  'hypothesis.rank':['Ordenar hipóteses','Confrontar cada cluster com terreno e parâmetros.','{evidence:4}','3 hipóteses com confiança declarada'],
+  'incident.read':['Ler incidente','Estado, fase, objetivos, tarefas e lacunas.','{id:"INC-2026-0417"}','nível 4 · fase de resposta'],
+  'sitrep.draft':['Rascunhar SITREP','Fatos, mudanças, previsão, impactos, ações e lacunas.','{n:7}','rascunho com seções separadas'],
+  'handover.compose':['Compor passagem de turno','Pendências, riscos, contatos e próximos marcos.','{}','rascunho aguardando aceite'],
+  'climate.feeds':['Consolidar fontes climáticas','Reunir boletins institucionais de ENSO.','{sources:4}','consenso de 4 fontes'],
+  'teleconnection.map':['Mapear teleconexões','Traduzir a fase em anomalia regional esperada.','{}','6 regiões · confiança declarada'],
+  'analog.search':['Buscar análogos','Eventos semelhantes e, sobretudo, suas diferenças.','{}','4 análogos com diferenças documentadas'],
+  'reservoir.state':['Ler estado dos reservatórios','Cotas, volumes, afluências e restrições vigentes.','{system:"Cascata Jacuí"}','4 reservatórios · 2 em vertimento'],
+  'rule.evaluate':['Avaliar regras','Curva-guia, condicionantes e limites de vertimento.','{}','2 regras em faixa de violação'],
+  'scenario.run':['Simular alternativas','Políticas de defluência sob ensemble de afluência.','{policies:3,members:12}','3 políticas comparadas'],
+  'tradeoff.rank':['Ordenar trade-offs','Amortecimento, energia, navegação e segurança.','{objectives:3}','recomendação técnica pronta'],
+  'order.read':['Ler ordem de serviço','Tipo, prioridade, local, risco e dependências.','{}','ordem carregada com risco declarado'],
+  'route.optimize':['Otimizar rota','Sequenciar pontos sobre a malha viária disponível.','{points:5}','rota de 214 km'],
+  'checklist.build':['Montar checklist','Itens adaptativos conforme tipo e risco da vistoria.','{}','checklist adaptativo gerado'],
+  'evidence.summarize':['Resumir evidências','Consolidar mídia, medições e constatações.','{}','resumo sem concluir constatação'],
+  'template.render':['Renderizar template','Aplicar o modelo editorial da audiência.','{audience:"bacia"}','rascunho versionado'],
+  'map.snapshot':['Capturar mapa','Snapshot com extent, fonte e horário travados.','{}','snapshot gerado'],
+  'plainlang.rewrite':['Reescrever em linguagem simples','Versão pública sem jargão técnico.','{}','versão simplificada gerada'],
+  'policy.eval':['Avaliar política','Verificar alçada, versão, fonte e uso permitido.','{}','nenhuma violação detectada'],
+  'health.probe':['Sondar saúde','Testar disponibilidade e latência dos conectores.','{targets:14}','11 íntegros · 3 degradados'],
+  'queue.read':['Ler filas','Backlog, retentativas e dead-letter.','{}','1.284 mensagens · 1 em dead-letter'],
+  'fallback.activate':['Ativar contingência','Acionar cache ou fonte alternativa declarada.','{}','contingência ativa · jornada preservada'],
+  'runbook.suggest':['Sugerir runbook','Propor procedimento de recuperação aplicável.','{}','runbook proposto para aprovação'],
+  'georag.norms':['Consultar base normativa','Recuperação ancorada com órgão, versão e vigência.','{}','4 instrumentos com vigência conferida'],
+  'case.read':['Consolidar dossiê','Evidências, mapas, séries e atos correlatos.','{}','18 evidências · 3 atos correlatos'],
+  'alternative.compare':['Comparar alternativas','Efeito, risco, legalidade, reversibilidade e incerteza.','{options:3}','matriz uniforme de comparação'],
+  'draft.compose':['Compor minuta','Fatos, fundamentos, dispositivo e condicionantes.','{cite:true}','minuta não assinada e não publicada']
+};
+
+const AGENTS=(()=>{
+  let runs=[]; let activeRun=null; let auto=true;
+  const MAX_CONC=4, MAX_QUEUE=8;
+  let queue=[]; const cooldown={}; let lastTickH=CLOCK.hour(); let seq=0;
+
+  /* ---------- planos detalhados (mantidos para os agentes-âncora) ---------- */
   const PLANOS={
     A13:{obj:'Explicar a divergência entre o cenário referencial e a observação NRT do ciclo atual',
-      risco:'alto', custo:'US$ 0,42 · 18,4 s',
-      steps:[
-        {n:'Recuperar par compatível',d:'Selecionar FloodScenario N1 e FloodObservation da mesma janela temporal, harmonizando CRS e resolução.',
-         tool:'raster.diff',in:'{runId:"HYD-RS-0912", obsId:"'+FRAMES[13].version+'", crs:"EPSG:4326", res:"30 m"}',
-         out:'par válido · overlap temporal 42 min · reamostragem bilinear registrada'},
-        {n:'Calcular métricas espaciais',d:'IoU, hit/miss/false alarm, erro de profundidade e área surpresa por trecho.',
-         tool:'metrics.spatial',in:'{metrics:["iou","hit","miss","false","depthMAE"]}',
-         out:'IoU 0,712 · miss 214 km² · false 38 km² · MAE profundidade 0,27 m'},
-        {n:'Detectar clusters',d:'Agrupar divergências contíguas e ordenar por severidade operacional.',
-         tool:'cluster.detect',in:'{minArea:12, method:"dbscan", eps:"1,8 km"}',
-         out:'3 clusters · C1 oeste de Eldorado do Sul (214 km²) · C2 arroio Sarandi (46 km²) · C3 jusante Itapuã (11 km²)'},
-        {n:'Ordenar hipóteses de causa',d:'Confrontar cada cluster com terreno, batimetria, rugosidade e condições de contorno.',
-         tool:'hypothesis.rank',in:'{evidence:["dem","bathy_gap","manning","boundary"]}',
-         out:'H1 armazenamento em planície subestimado (0,58) · H2 dique não representado (0,27) · H3 erro de contorno de jusante (0,15)'},
-        {n:'Preparar change request',d:'Montar proposta de recalibração com efeito estimado, risco e plano de reversão.',
-         tool:'draft.compose',in:'{target:"MD-RAS-GUA", param:"manning_floodplain"}', gate:true,
-         out:'ChangeRequest CR-2026-0143 pronto — exige aprovação humana antes de qualquer promoção'}
-      ],
-      facts:['IoU do ciclo atual é 0,712, abaixo do limiar operacional de 0,80 definido em M16.',
-             'A observação sintética v14 cobre 92,4% da AOI; 7,6% permanecem sem informação.',
-             'O cenário N1 foi executado com batimetria inferida em 63% do domínio (registro do M5).'],
+      facts:['IoU do ciclo atual está abaixo do limiar operacional de 0,80 definido em M16.',
+             'A observação sintética cobre 92,4% da AOI; 7,6% permanecem sem informação.',
+             'O cenário N1 foi executado com batimetria inferida em 63% do domínio.'],
       infers:['A maior parte da divergência concentra-se em terreno abaixo de 6 m de altura relativa ao canal.',
               'A defasagem de 3 h no pico é compatível com armazenamento adicional em planície não representado.'],
       hypos:['H1 — rugosidade da planície oeste subestimada, reduzindo o amortecimento simulado. Confiança 0,58.',
              'H2 — dique ou aterro presente no terreno e ausente na geometria hidráulica. Confiança 0,27.',
              'H3 — condição de contorno de jusante mal especificada durante a maré meteorológica. Confiança 0,15.'],
-      recs:['Abrir change request de recalibração para MD-RAS-GUA restrita ao parâmetro de rugosidade da planície.',
+      recs:['Abrir change request de recalibração restrito ao parâmetro de rugosidade da planície.',
             'Priorizar levantamento LiDAR e batimetria no setor oeste antes de elevar o trecho para N2.',
-            'Despachar vistoria de campo para confirmar a existência de barreira antrópica no cluster C2.'],
+            'Despachar vistoria de campo para confirmar barreira antrópica no cluster C2.'],
       limits:['Nenhuma recalibração é aplicada automaticamente. A causa permanece rotulada como hipótese.',
-              'Diferentes combinações de parâmetros podem reproduzir a mesma extensão inundada — evitar calibração cega.',
+              'Combinações distintas de parâmetros reproduzem a mesma extensão — evitar calibração cega.',
               'A observação é sintética: '+WM]},
-
     A12:{obj:'Recalcular impactos territoriais para a versão mais recente da mancha observada',
-      risco:'médio', custo:'US$ 0,18 · 9,1 s',
-      steps:[
-        {n:'Carregar mancha e receptores',d:'Intersecção espacial entre a observação NRT e o registro de exposição.',
-         tool:'spatial.intersect',in:'{obs:"'+FRAMES[13].version+'", layers:["CHT","IBGE_grade","infra_setorial"]}',
-         out:'168 receptores sintéticos intersectados · 14 municípios tocados'},
-        {n:'Estimar população',d:'Aplicar grade estatística e fator de ocupação; rotular como estimativa.',
-         tool:'population.estimate',in:'{grid:"IBGE 2022", method:"dasimétrico"}',
-         out:'≈ 2,14 milhões de pessoas em municípios afetados · 187 mil na área diretamente inundada (estimativa)'},
-        {n:'Traçar dependências',d:'Propagar indisponibilidade de ETA, subestação e travessia para serviços dependentes.',
-         tool:'dependency.trace',in:'{depth:3, sectors:["água","energia","saúde","logística"]}',
-         out:'3 ETA com captação comprometida · 2 subestações em risco · 7 travessias interrompidas'},
-        {n:'Priorizar resposta',d:'Ordenar por severidade, criticidade do receptor, acessibilidade e confiança do dado.',
-         tool:'priority.rank',in:'{weights:{sev:.4,crit:.3,access:.2,conf:.1}}', gate:true,
-         out:'Ranking de 41 prioridades — mobilização exige decisão humana'}
-      ],
-      facts:['A versão v14 da mancha observada cobre 1.070 km² contra 850 km² previstos.',
+      facts:['A área observada supera a prevista no ciclo corrente.',
              'Onze municípios estão em nível operacional 4 e três em nível 3.'],
       infers:['A área adicional concentra-se em setores de baixa cota com alta densidade de receptores críticos.'],
-      hypos:['A estimativa populacional pode estar superestimada onde a grade IBGE é de 2022 e houve realocação recente.'],
-      recs:['Compartilhar dossiê territorial com as defesas civis dos 14 municípios.',
-            'Antecipar contato com concessionárias das três ETA com captação comprometida.'],
+      hypos:['A estimativa populacional pode estar superestimada onde a grade IBGE de 2022 não capta realocações.'],
+      recs:['Compartilhar dossiê territorial com as defesas civis dos municípios atingidos.',
+            'Antecipar contato com as concessionárias das ETA com captação comprometida.'],
       limits:['Toda estimativa populacional é rotulada como estimativa e não substitui levantamento de campo.',
-              'Receptores são sintéticos neste mockup e não representam ativos reais.']},
-
+              'Receptores são sintéticos neste ambiente e não representam ativos reais.']},
     A16:{obj:'Avaliar alternativas de operação para a cascata do Jacuí sob a previsão atual',
-      risco:'alto', custo:'US$ 0,31 · 14,7 s',
-      steps:[
-        {n:'Ler estado dos reservatórios',d:'Cotas, volumes, afluências e restrições vigentes na cascata.',
-         tool:'reservoir.state',in:'{system:"Cascata Jacuí"}',
-         out:'Passo Real 96,8% · Ernestina 99,4% · Itaúba 92,1% · Dona Francisca 88,6%'},
-        {n:'Avaliar regras vigentes',d:'Verificar curva-guia, condicionantes e limites de vertimento.',
-         tool:'rule.evaluate',in:'{rules:["curva_guia","vertimento_max","coordenacao_ONS"]}',
-         out:'2 regras em faixa de violação iminente · coordenação com ONS obrigatória'},
-        {n:'Simular alternativas',d:'Três políticas de defluência sob ensemble de afluência de 12 membros.',
-         tool:'scenario.run',in:'{policies:["manter","reduzir_15","antecipar_deplecionamento"], members:12}',
-         out:'Alternativa B reduz o pico a jusante em 0,22 m com custo energético de 41 GWh'},
-        {n:'Comparar trade-offs',d:'Confrontar amortecimento, energia, navegação, abastecimento e risco estrutural.',
-         tool:'tradeoff.rank',in:'{objectives:["pico_jusante","energia","seguranca"]}', gate:true,
-         out:'Recomendação técnica pronta — a operação da estrutura permanece com o operador e o ONS'}
-      ],
       facts:['Passo Real opera em vertimento controlado com afluência de 2.860 m³/s.',
-             'A cascata do Jacuí contribui com cerca de 58% da vazão que chega ao Guaíba nas próximas 18 h.'],
+             'A cascata contribui com cerca de 58% da vazão que chega ao Guaíba nas próximas 18 h.'],
       infers:['A antecipação de deplecionamento perde eficácia se aplicada após h+50 do cenário.'],
-      hypos:['O ganho de 0,22 m no pico pode ser menor se a contribuição do Taquari for maior que a prevista.'],
+      hypos:['O ganho de 0,22 m no pico pode ser menor se a contribuição do Taquari superar o percentil 75.'],
       recs:['Levar a alternativa B à coordenação com o ONS, registrando o custo energético estimado.',
             'Manter monitoramento intensivo de Ernestina, que já opera com vertedouro livre.'],
       limits:['O agente não opera estrutura, não altera regra vigente e não substitui a decisão do operador.',
               'A competência sobre a operação energética permanece com ONS e ANEEL.']},
-
     A21:{obj:'Estruturar alternativas e minuta para o caso CS-2026-0188',
-      risco:'alto', custo:'US$ 0,55 · 22,3 s',
-      steps:[
-        {n:'Consolidar dossiê',d:'Reunir evidências, mapas, séries, cenários e atos correlatos do caso.',
-         tool:'case.read',in:'{caseId:"CS-2026-0188"}',
-         out:'18 evidências · 4 mapas · 2 cenários publicados · 3 atos correlatos'},
-        {n:'Recuperar base normativa',d:'Consulta ancorada ao repositório normativo com órgão, versão e vigência.',
-         tool:'georag.norms',in:'{query:"restrição temporária de captação evento crítico competência ANA"}',
-         out:'Lei 9.433/1997 art. 1º e 2º · Lei 9.984/2000 · Resolução ANA 225/2024 · Regimento Interno (COVEC/CORSH)'},
-        {n:'Comparar alternativas',d:'Efeitos, beneficiados, riscos, legalidade, reversibilidade e incerteza.',
-         tool:'alternative.compare',in:'{options:["monitorar","recomendar_restricao","restringir_direto"]}',
-         out:'3 alternativas com matriz uniforme de comparação e faixa de incerteza'},
-        {n:'Compor minuta',d:'Estrutura, fatos, fundamentos, dispositivo, condicionantes e vigência com citações.',
-         tool:'draft.compose',in:'{template:"despacho_recomendacao", cite:true}', gate:true,
-         out:'Minuta DraftOrder DO-2026-0188-v1 — não assinada e não publicada'}
-      ],
-      facts:['O nível em Cais Mauá superou a cota de inundação às 10h do dia 23/08 (h+34 do cenário).',
+      facts:['O nível em Cais Mauá superou a cota de inundação no dia 23/08.',
              'Três ETA do sistema apresentam captação comprometida segundo o ImpactRun mais recente.'],
       infers:['A janela útil para uma recomendação preventiva encerra-se em aproximadamente 12 h.'],
-      hypos:['A qualidade da água bruta pode deteriorar mais rapidamente que o previsto se houver refluxo de esgoto.'],
+      hypos:['A qualidade da água bruta pode deteriorar mais rápido que o previsto se houver refluxo de esgoto.'],
       recs:['Adotar a alternativa 2: recomendar restrição temporária com condicionantes e prazo de 72 h.',
             'Comunicar simultaneamente concessionárias, defesa civil e o comitê de bacia.'],
       limits:['O agente não assina, não publica e não sanciona. A minuta exige aprovação por alçada.',
               'Citações normativas devem ser conferidas pelo revisor humano antes do despacho.']},
-
     A04:{obj:'Qualificar o bloco de estações silenciosas no RS Central',
-      risco:'médio', custo:'US$ 0,09 · 4,2 s',
-      steps:[
-        {n:'Varrer leituras',d:'Detectar gap, spike, drift e sensor congelado nas últimas 24 h.',
-         tool:'series.read',in:'{window:"24h", stations:"RS-Central"}',
-         out:'5 estações sem transmissão · 4 com drift acima de 0,09 m · 12 gaps'},
-        {n:'Comparar vizinhança',d:'Consistência espacial com estações próximas e com o campo de chuva.',
-         tool:'neighbor.compare',in:'{radius:"45 km", vars:["nivel","chuva"]}',
-         out:'Inconsistência confirmada em 4 de 5 · 1 caso compatível com evento real'},
-        {n:'Confrontar com modelo',d:'Comparar leitura com hidrograma simulado do MGB para o mesmo trecho.',
-         tool:'model.compare',in:'{model:"MD-MGB-ATS"}',
-         out:'Resíduo médio 0,31 m — coerente com falha de sensor, não com evento'},
-        {n:'Abrir tickets e propor rota',d:'Gerar ordens de manutenção e sugerir rota otimizada para a equipe.',
-         tool:'ticket.create',in:'{priority:"alta", team:"Campo RS-3"}', gate:true,
-         out:'5 tickets criados · rota de 214 km sugerida — despacho exige autorização'}
-      ],
       facts:['Cinco plataformas estão sem transmissão há mais de 4 h.','Quatro delas apresentam bateria abaixo de 14%.'],
       infers:['O padrão temporal coincide com a passagem da frente, sugerindo falha de alimentação e não de sensor.'],
-      hypos:['Uma das estações pode estar submersa, o que exigiria abordagem diferente da manutenção padrão.'],
+      hypos:['Uma das estações pode estar submersa, o que exigiria abordagem distinta da manutenção padrão.'],
       recs:['Despachar a equipe Campo RS-3 com módulos de alimentação reserva.',
             'Marcar as séries afetadas como não qualificadas até a validação em campo.'],
       limits:['O agente não invalida séries por conta própria. A invalidação exige revisor humano.']},
-
     A10:{obj:'Acompanhar o ciclo de aquisição SAR da AOI do Guaíba',
-      risco:'alto', custo:'US$ 0,12 · 6,8 s',
-      steps:[
-        {n:'Ler AOI e prioridade',d:'Recuperar geometria, prioridade e janela do evento ativo.',
-         tool:'aoi.read',in:'{aoi:"AOI-RS-GUAIBA-01"}',
-         out:'AOI de 3.480 km² · prioridade alta · janela contínua'},
-        {n:'Simular solicitação',d:'Montar payload de tasking conforme o contrato lógico, sem envio real.',
-         tool:'tasking.simulate',in:'{window:"3h", priority:"high", dryRun:true}',
-         out:'Payload válido · nenhum pedido enviado · contrato ICEYE não firmado'},
-        {n:'Ingerir produto',d:'Receber o produto sintético e preservar tempos, versão e proveniência.',
-         tool:'product.ingest',in:'{version:"'+FRAMES[13].version+'"}',
-         out:'FloodObservation ingerida com watermark obrigatório aplicado em mapa, tooltip e exportação'},
-        {n:'Acompanhar SLA',d:'Registrar latência observada e comparar com a faixa contratual de referência.',
-         tool:'sla.track',in:'{}',
-         out:'Latência do produto: 118 min. Nenhuma latência fixa é prometida antes do contrato.'}
-      ],
-      facts:['O adapter implementa o contrato lógico da ICEYE; nenhum dado real é consumido.',
+      facts:['O adapter implementa o contrato lógico; nenhum dado real é consumido.',
              'A latência exibida vem do próprio produto e não de uma promessa codificada.'],
-      infers:['A cadência de 3 h é suficiente para acompanhar a recessão, mas não o pico de uma enxurrada.'],
+      infers:['A cadência de 3 h acompanha a recessão, mas não o pico de uma enxurrada.'],
       hypos:[],
       recs:['Manter a AOI ativa até 12 h após o retorno abaixo da cota de alerta.'],
       limits:['O agente não contrata, não envia pedido real e não promete SLA.',
-              'SAR ICEYE não é radar meteorológico — o radar meteorológico permanece no M3.',
-              WM]}
+              'SAR não é radar meteorológico — o radar meteorológico permanece no M3.',WM]}
   };
 
-  function novoRun(agentId,opts){
-    const P=PLANOS[agentId]||PLANOS.A13;
-    const ag=agente(agentId);
-    const run={
-      id:uid('AR'), agentId, agentVersion:ag.v, requestId:uid('REQ'),
-      status:'running', started:CLOCK.date(), stepIdx:0, obj:P.obj, risco:P.risco, custo:P.custo,
-      steps:P.steps.map(s=>Object.assign({},s,{status:'pending',t:null})),
-      facts:P.facts, infers:P.infers, hypos:P.hypos, recs:P.recs, limits:P.limits,
-      simulated:true, ctx:{bacia:CTX.basinIds[0],evento:CTX.incidentId,fidelidade:CTX.fidelity}
+  /* ---------- construção do plano a partir da allowlist do agente ---------- */
+  function planFor(agentId){
+    const a=agente(agentId);
+    const base=PLANOS[agentId];
+    const f=frameNow(), h=CLOCK.hour();
+    const steps=a.tools.map((t,i)=>{
+      const d=TOOLS[t]||['Executar '+t,'Chamada de ferramenta registrada no trace.','{}','concluído'];
+      // o gate acompanha a ação proposta: sempre em risco alto, eventualmente em risco médio
+      const ultimo=i===a.tools.length-1;
+      const gate=a.gate&&ultimo&&(a.risco==='alto'||rand()<0.3);
+      return {n:d[0],d:d[1],tool:t,in:d[2],out:d[3],gate,status:'pending',t:null,startedH:null,
+        durH:0.05+((i*37+agentId.charCodeAt(2))%23)/230};
+    });
+    return {
+      obj:(base&&base.obj)||a.fun,
+      risco:a.risco,
+      facts:(base&&base.facts)||[
+        `No instante h+${fmt(h,1)} o nível em Cais Mauá é ${fmt(stageAt(h),2)} m e a área observada é ${fmt0(f.areaObs)} km².`,
+        `Gatilho declarado do agente: ${a.gat.toLowerCase()}.`,
+        `Fontes consultadas dentro da allowlist: ${a.tools.join(', ')}.`],
+      infers:(base&&base.infers)||[
+        `O quadro observado é consistente com a fase ${h<PEAK_H?'de ascensão':'de recessão'} do evento.`],
+      hypos:(base&&base.hypos)||[],
+      recs:(base&&base.recs)||[`${a.out} pronto para revisão humana.`],
+      limits:(base&&base.limits)||[a.lim,'Saída produzida em ambiente de simulação — '+SCEN.scenarioId],
+      steps
     };
-    runs.unshift(run); activeRun=run;
-    BUS.emit('agent.run.started',{run:run.id},{text:`Agente <b>${agentId} ${esc(ag.nome)}</b> iniciado — ${esc(P.obj)}`,sev:'modelado',mod:'M18',ref:run.id});
-    step(run);
+  }
+
+  /* ---------- ciclo de vida ---------- */
+  function enqueue(agentId,trigger){
+    const a=agente(agentId); if(!a)return null;
+    const h=CLOCK.hour();
+    // resfriamento proporcional ao risco: operação de risco alto não se repete de hora em hora
+    const cd=a.risco==='alto'?8:a.risco==='médio'?3:1.5;
+    if(cooldown[agentId]!=null&&h-cooldown[agentId]<cd)return null;
+    // contrapressão: a frota não despacha mais ação crítica do que a capacidade humana de decidir
+    const pend=STORE.approvals.filter(x=>x.status==='pendente').length;
+    if(a.gate&&pend>=10){
+      if(!cooldown['__sat']||h-cooldown['__sat']>6){
+        cooldown['__sat']=h;
+        BUS.emit('agent.intervention',{},
+          {text:`Despacho de <b>${agentId}</b> retido — fila de decisão saturada (${pend} gates pendentes)`,
+           sev:'atencao',mod:'M18'});
+      }
+      return null;
+    }
+    if(runs.some(r=>r.agentId===agentId&&(r.status==='running'||r.status==='gate'||r.status==='queued')))return null;
+    if(queue.length>=MAX_QUEUE)return null;
+    const p=planFor(agentId);
+    const run={
+      id:'AR-'+String(++seq).padStart(4,'0'), agentId, agentVersion:a.v,
+      requestId:'REQ-'+Math.floor(rand()*1e6).toString(36).toUpperCase(),
+      status:'queued', trigger:trigger||'manual',
+      queuedH:h, startedH:null, endedH:null, started:CLOCK.date(),
+      stepIdx:0, obj:p.obj, risco:p.risco, steps:p.steps,
+      facts:p.facts, infers:p.infers, hypos:p.hypos, recs:p.recs, limits:p.limits,
+      tokens:0, usd:0, toolCalls:0, simulated:true,
+      ctx:{bacia:CTX.basinIds[0],evento:CTX.incidentId,fidelidade:CTX.fidelity}
+    };
+    cooldown[agentId]=h;
+    runs.unshift(run); queue.push(run);
+    if(runs.length>90)runs.length=90;
     return run;
   }
-  function step(run){
-    if(timer)clearTimeout(timer);
-    if(run.stepIdx>=run.steps.length){
-      run.status='completed';
-      BUS.emit('agent.run.completed',{},{text:`Agente <b>${run.agentId}</b> concluiu a execução com ${run.recs.length} recomendações`,sev:'normal',mod:'M18',ref:run.id});
-      APP.rerender();return;
+  function running(){return runs.filter(r=>r.status==='running')}
+  function pump(){
+    while(running().length<MAX_CONC&&queue.length){
+      const r=queue.shift();
+      if(r.status!=='queued')continue;
+      r.status='running'; r.startedH=CLOCK.hour();
+      r.steps[0].startedH=r.startedH;
+      if(!activeRun||activeRun.status==='completed'||activeRun.status==='cancelled')activeRun=r;
+      BUS.emit('agent.run.started',{run:r.id},
+        {text:`<b>${r.agentId}</b> ${esc(agente(r.agentId).nome)} iniciado — ${esc(r.trigger)}`,sev:'modelado',mod:'M18',ref:r.id});
     }
-    const s=run.steps[run.stepIdx];
-    s.status='running'; APP.rerender();
-    timer=setTimeout(()=>{
+  }
+  function advance(h){
+    running().forEach(r=>{
+      const s=r.steps[r.stepIdx]; if(!s)return;
+      if(s.startedH==null)s.startedH=h;
+      if(h-s.startedH<s.durH)return;
       s.status='done'; s.t=CLOCK.date();
+      r.toolCalls++; r.tokens+=Math.round(820+rand()*2600); r.usd+=Number((0.018+rand()*0.06).toFixed(3));
+      BUS.emit('agent.step.completed',{run:r.id,tool:s.tool},
+        {text:`<b>${r.agentId}</b> · <span class="mono">${esc(s.tool)}</span> — ${esc(s.out)}`,sev:'info',mod:'M18',ref:r.id});
       if(s.gate){
-        run.status='approval';
-        const ap={id:uid('AP'),runId:run.id,agentId:run.agentId,acao:s.n,evid:run.facts.length+run.infers.length,
-          conf:0.62+rand()*0.3,alcada:run.risco==='alto'?'Superintendente / DICOL':'Coordenação',
-          prazo:'2 h',status:'pendente',at:CLOCK.date(),out:s.out};
+        r.status='gate';
+        const ap={id:'AP-'+String(++seq).padStart(4,'0'),runId:r.id,agentId:r.agentId,acao:s.n,
+          evid:r.facts.length+r.infers.length,conf:0.62+rand()*0.3,
+          alcada:r.risco==='alto'?'Superintendente / DICOL':'Coordenação',prazo:'2 h',
+          status:'pendente',at:CLOCK.date(),atH:h,out:s.out};
         STORE.approvals.unshift(ap);
         BUS.emit('decision.approval.required',{ap:ap.id},
-          {text:`Gate humano — <b>${run.agentId}</b> propõe: ${esc(s.n)}. Aprovação de ${esc(ap.alcada)} requerida.`,sev:'alerta',mod:'M18',ref:ap.id});
-        UI.toast('Gate humano','O agente parou em um ponto de autoridade. Abra Aprovações para decidir.','warn');
-        APP.rerender();return;
+          {text:`Gate humano — <b>${r.agentId}</b> propõe: ${esc(s.n)}. Alçada ${esc(ap.alcada)}.`,sev:'alerta',mod:'M18',ref:ap.id});
+        return;
       }
-      run.stepIdx++; APP.rerender(); step(run);
-    }, 1500+rand()*1400);
+      r.stepIdx++;
+      if(r.stepIdx>=r.steps.length){
+        r.status='completed'; r.endedH=h;
+        BUS.emit('agent.run.completed',{run:r.id},
+          {text:`<b>${r.agentId}</b> concluiu em ${fmt((r.endedH-r.startedH)*60,0)} min simulados · ${r.toolCalls} chamadas · ${r.recs.length} recomendações`,
+           sev:'normal',mod:'M18',ref:r.id});
+      }else r.steps[r.stepIdx].startedH=h;
+    });
   }
+
+  /* ---------- despacho autônomo por gatilho ---------- */
+  const TRIGGERS=[
+    {evt:'flood.product.ingested',   ags:['A11','A12'], t:'produto SAR ingerido'},
+    {evt:'convergence.completed',    ags:['A13'],       t:'convergência recalculada'},
+    {evt:'meteo.frame.received',     ags:['A05'],       t:'novo quadro de chuva', p:0.34},
+    {evt:'station.reading.received', ags:['A04','A02'], t:'leitura telemétrica', p:0.12},
+    {evt:'model.run.progress',       ags:['A06','A08'], t:'execução hidrológica', p:0.5},
+    {evt:'model.forecast.published', ags:['A07','A09'], t:'cenário publicado'},
+    {evt:'integration.sla.breached', ags:['A20'],       t:'SLA de integração em risco', p:0.55},
+    {evt:'incident.level.changed',   ags:['A01','A14'], t:'mudança no evento'},
+    {evt:'field.evidence.synced',    ags:['A17'],       t:'evidência de campo sincronizada'},
+    {evt:'decision.approval.required',ags:['A19'],      t:'gate registrado', p:0.4},
+    {evt:'context.changed',          ags:['A03'],       t:'contexto alterado', p:0.25}
+  ];
+  TRIGGERS.forEach(tr=>BUS.on(tr.evt,()=>{
+    if(!auto)return;
+    if(tr.p!=null&&rand()>tr.p)return;
+    tr.ags.forEach(id=>enqueue(id,tr.t));
+    pump();
+  }));
+  // rotinas periódicas da frota
+  const PERIODICOS=[['A15',12,'perspectiva climática'],['A10',6,'ciclo de aquisição'],
+    ['A18',8,'produto de comunicação'],['A16',9,'estado dos reservatórios'],
+    ['A21',14,'caso regulatório'],['A03',10,'auditoria de linhagem'],['A19',7,'verificação de política'],
+    ['A04',5,'varredura da rede telemétrica'],['A02',11,'perfilagem de qualidade de dados']];
+  const perFired={};
+
+  /* ---------- relógio ---------- */
+  CLOCK.onTick(()=>{
+    const h=CLOCK.hour();
+    if(h<lastTickH-0.2){                    // replay: poda o que ainda não aconteceu
+      runs=runs.filter(r=>r.queuedH<=h);
+      queue=queue.filter(r=>r.queuedH<=h);
+      STORE.approvals=STORE.approvals.filter(a=>a.atH==null||a.atH<=h);
+      for(const k in cooldown)delete cooldown[k];
+      for(const k in perFired)delete perFired[k];
+      if(activeRun&&activeRun.queuedH>h)activeRun=runs[0]||null;
+    }
+    lastTickH=h;
+    // a fila envelhece: pedido cujo contexto já passou é descartado, não executado tarde
+    for(let i=queue.length-1;i>=0;i--){
+      const r=queue[i];
+      if(h-r.queuedH>6){
+        queue.splice(i,1); r.status='cancelled'; r.endedH=h;
+        BUS.emit('agent.run.completed',{run:r.id},
+          {text:`Execução de <b>${r.agentId}</b> descartada da fila — contexto do gatilho "${esc(r.trigger)}" já expirou`,
+           sev:'atencao',mod:'M18',ref:r.id});
+      }
+    }
+    // o prazo do gate também corre: sem decisão em 4 h simuladas, escala e expira
+    STORE.approvals.filter(a=>a.status==='pendente'&&!a.escalado&&a.atH!=null&&h-a.atH>6).forEach(a=>{
+      a.escalado=true; a.alcada='Escalado — '+a.alcada;
+      const r=runs.find(x=>x.id===a.runId);
+      if(r&&r.status==='gate')r.status='paused';
+      BUS.emit('decision.approval.required',{ap:a.id},
+        {text:`Gate de <b>${a.agentId}</b> sem decisão há 6 h — "${esc(a.acao)}" escalado para ${esc(a.alcada)}`,
+         sev:'alerta',mod:'M18',ref:a.id});
+      STORE.audits.unshift({id:uid('AU'),at:CLOCK.date(),ator:'sistema',acao:'Escalonamento de gate por prazo',
+        alvo:a.agentId+' · '+a.acao,resultado:'escalado',corr:a.runId});
+    });
+    if(auto)PERIODICOS.forEach(p=>{
+      const n=Math.floor(h/p[1]), k=p[0]+'_'+n;
+      if(!perFired[k]&&h>0){perFired[k]=1;enqueue(p[0],p[2])}
+    });
+    pump(); advance(h);
+  });
+
+  /* ---------- intervenção humana ---------- */
   function approve(apId,dec){
-    const ap=STORE.approvals.find(a=>a.id===apId); if(!ap)return;
+    const ap=STORE.approvals.find(a=>a.id===apId); if(!ap||ap.status!=='pendente')return;
     ap.status=dec; ap.decidedAt=CLOCK.date(); ap.decidedBy=CTX.user;
     const run=runs.find(r=>r.id===ap.runId);
-    BUS.emit('decision.approval.required',{},{text:`Aprovação <b>${dec}</b> por ${esc(CTX.user)} — ação "${esc(ap.acao)}" do agente ${ap.agentId}`,
-      sev:dec==='aprovada'?'normal':'atencao',mod:'M18',ref:apId});
+    BUS.emit('agent.gate.decided',{},
+      {text:`Aprovação <b>${dec}</b> por ${esc(CTX.user)} — "${esc(ap.acao)}" do agente ${ap.agentId}`,
+       sev:dec==='rejeitada'?'atencao':'normal',mod:'M18',ref:apId});
     STORE.audits.unshift({id:uid('AU'),at:CLOCK.date(),ator:CTX.user,acao:'Decisão sobre gate de agente',
       alvo:ap.agentId+' · '+ap.acao,resultado:dec,corr:ap.runId});
     if(run){
-      if(dec==='aprovada'){run.status='running';run.stepIdx++;step(run);
-        UI.toast('Ação aprovada','Registrada com autor, timestamp e correlação. O agente retomou a execução.','ok');}
-      else{run.status='cancelled';UI.toast('Ação rejeitada','A execução foi interrompida e o registro preservado.','warn');}
+      if(dec==='rejeitada'){run.status='cancelled';run.endedH=CLOCK.hour();
+        UI.toast('Ação rejeitada','A execução foi interrompida e o registro preservado.','warn')}
+      else{
+        run.stepIdx++;
+        if(run.stepIdx>=run.steps.length){run.status='completed';run.endedH=CLOCK.hour()}
+        else{run.status='running';run.steps[run.stepIdx].startedH=CLOCK.hour();pump()}
+        UI.toast('Ação aprovada','Registrada com autor, timestamp e correlação.','ok');
+      }
     }
     APP.rerender();
   }
   function intervene(runId,kind){
     const run=runs.find(r=>r.id===runId); if(!run)return;
-    if(kind==='pause'){run.status='paused';if(timer)clearTimeout(timer);UI.toast('Execução pausada','O estado foi preservado e pode ser assumido por um humano.','warn')}
-    if(kind==='resume'){run.status='running';step(run);UI.toast('Execução retomada','','ok')}
-    if(kind==='cancel'){run.status='cancelled';if(timer)clearTimeout(timer);UI.toast('Execução cancelada','','err')}
-    if(kind==='takeover'){run.status='takeover';if(timer)clearTimeout(timer);
-      UI.toast('Controle assumido',CTX.user+' assumiu a execução sem perder o contexto acumulado.','ai')}
-    BUS.emit('agent.intervention',{},{text:`Intervenção humana <b>${kind}</b> na execução ${run.id} (${run.agentId})`,sev:'atencao',mod:'M18',ref:runId});
+    if(kind==='pause'){run.status='paused';UI.toast('Execução pausada','Estado preservado para retomada humana.','warn')}
+    if(kind==='resume'){run.status='running';const s=run.steps[run.stepIdx];if(s)s.startedH=CLOCK.hour();UI.toast('Execução retomada','','ok')}
+    if(kind==='cancel'){run.status='cancelled';run.endedH=CLOCK.hour();UI.toast('Execução cancelada','','err')}
+    if(kind==='takeover'){run.status='takeover';UI.toast('Controle assumido',CTX.user+' assumiu a execução sem perder o contexto acumulado.','ai')}
+    BUS.emit('agent.intervention',{},
+      {text:`Intervenção humana <b>${kind}</b> na execução ${run.id} (${run.agentId})`,sev:'atencao',mod:'M18',ref:runId});
     APP.rerender();
+  }
+  function killAll(){
+    runs.forEach(r=>{if(r.status==='running'||r.status==='queued')r.status='paused'});
+    queue.length=0; auto=false;
+    BUS.emit('agent.intervention',{},{text:'<b>Kill switch global</b> acionado — frota pausada com estado preservado',sev:'critico',mod:'M18'});
+    UI.toast('Kill switch acionado','Frota pausada. Os estados foram preservados para retomada humana.','err');
+    APP.rerender();
+  }
+  function setAuto(v){
+    auto=!!v;
+    BUS.emit('agent.intervention',{},
+      {text:`Despacho autônomo <b>${auto?'ativado':'desativado'}</b> por ${esc(CTX.user)}`,sev:auto?'normal':'atencao',mod:'M18'});
+    APP.rerender();
+  }
+  function start(id){
+    const r=enqueue(id,'solicitação do operador');
+    if(!r){UI.toast('Execução não enfileirada','O agente já está em execução ou dentro do período de resfriamento.','warn');return null}
+    pump(); APP.rightTab='agent'; APP.rightOpen=true; activeRun=r;
+    UI.toast('Agente enfileirado',agente(id).nome+' — acompanhe o trace no painel direito ou em M18-02.','ai');
+    APP.rerender(); return r;
+  }
+
+  /* ---------- estado agregado da frota ---------- */
+  function fleet(){
+    return AGENTES.map(a=>{
+      const r=runs.find(x=>x.agentId===a.id&&(x.status==='running'||x.status==='gate'||x.status==='queued'||x.status==='paused'));
+      const done=runs.filter(x=>x.agentId===a.id&&x.status==='completed').length;
+      let prog=0;
+      if(r&&r.steps.length){
+        const s=r.steps[r.stepIdx];
+        const frac=s&&s.startedH!=null?clamp((CLOCK.hour()-s.startedH)/s.durH,0,1):0;
+        prog=(r.stepIdx+frac)/r.steps.length*100;
+      }
+      return {a,run:r,status:r?r.status:'ocioso',prog,done,
+        step:r&&r.steps[r.stepIdx]?r.steps[r.stepIdx].n:null};
+    });
+  }
+  function stats(){
+    const h=CLOCK.hour();
+    return {
+      running:running().length, queued:queue.length,
+      gates:STORE.approvals.filter(a=>a.status==='pendente').length,
+      completed:runs.filter(r=>r.status==='completed').length,
+      cancelled:runs.filter(r=>r.status==='cancelled').length,
+      toolCalls:runs.reduce((s,r)=>s+r.toolCalls,0),
+      tokens:runs.reduce((s,r)=>s+r.tokens,0),
+      usd:runs.reduce((s,r)=>s+r.usd,0),
+      throughput:h>0?runs.filter(r=>r.status==='completed').length/Math.max(1,h)*24:0,
+      auto
+    };
   }
 
   /* ---------- render do trace ---------- */
   function traceHTML(run,compact){
-    if(!run)return UI.state('Nenhuma execução ativa','Inicie um agente a partir do cockpit ou de qualquer módulo.','◈');
-    const ag=agente(run.agentId);
+    if(!run)return UI.state('Nenhuma execução selecionada','A frota despacha agentes automaticamente conforme os gatilhos do barramento. Selecione uma execução no cockpit ou inicie uma manualmente.','◈');
+    const a=agente(run.agentId), h=CLOCK.hour();
+    const cur=run.steps[run.stepIdx];
+    const frac=cur&&cur.startedH!=null&&run.status==='running'?clamp((h-cur.startedH)/cur.durH,0,1):0;
     return `
       <div class="flexr mb6">
         <span class="badge b-modelado">${run.agentId} v${run.agentVersion}</span>
-        <b style="font-size:12.5px">${esc(ag.nome)}</b>
-        ${UI.badge(run.status,run.status==='completed'?'normal':run.status==='approval'?'atencao':run.status==='cancelled'?'critico':'info')}
+        <b style="font-size:12.5px">${esc(a.nome)}</b>
+        ${UI.badge(statusLabel(run.status),statusSev(run.status))}
         <span class="tiny faint mono" style="margin-left:auto">${esc(run.id)}</span>
       </div>
       <div class="tiny dim mb6">${esc(run.obj)}</div>
-      <div class="flexr tiny faint mb6"><span>risco ${esc(run.risco)}</span><span>·</span><span class="mono">${esc(run.custo)}</span>
-        <span>·</span><span>contexto: ${esc(run.ctx.bacia)} / ${esc(run.ctx.evento)} / ${esc(run.ctx.fidelidade)}</span></div>
-      <div class="trace">
-        ${run.steps.map((s,i)=>`<div class="tstep ${s.status==='done'?'done':s.status==='running'?'run':''} ${s.gate&&run.status==='approval'&&i===run.stepIdx?'gate':''}">
+      <div class="flexr tiny faint mb6">
+        <span>gatilho: ${esc(run.trigger)}</span><span>·</span><span>risco ${esc(run.risco)}</span><span>·</span>
+        <span class="mono">${run.toolCalls} chamadas · ${fmt0(run.tokens)} tokens · US$ ${fmt(run.usd,3)}</span></div>
+      ${run.status==='running'?UI.prog((run.stepIdx+frac)/run.steps.length*100):''}
+      <div class="trace" style="margin-top:8px">
+        ${run.steps.map((s,i)=>{
+          const st=s.status==='done'?'done':(i===run.stepIdx&&run.status==='running')?'run':
+                   (i===run.stepIdx&&run.status==='gate')?'gate':(run.status==='cancelled'&&i===run.stepIdx)?'fail':'';
+          return `<div class="tstep ${st}">
           <div class="st"><span class="nm">${i+1}. ${esc(s.n)}</span>
             ${s.gate?'<span class="badge b-atencao">gate humano</span>':''}
-            <span class="tm">${s.t?hhmm(s.t):(s.status==='running'?'executando…':'—')}</span></div>
+            <span class="tm">${s.t?hhmm(s.t):(st==='run'?fmt(frac*100,0)+'%':'—')}</span></div>
           <div class="sd">${esc(s.d)}</div>
-          ${s.status!=='pending'?`<div class="tool"><span class="tn">▸ ${esc(s.tool)}</span>
+          ${s.status!=='pending'||st==='run'?`<div class="tool"><span class="tn">▸ ${esc(s.tool)}</span>
             <span class="to">in  ${esc(s.in)}</span>
-            <span class="to">out ${s.status==='done'?esc(s.out):'…'}</span></div>`:''}
-        </div>`).join('')}
+            <span class="to">out ${s.status==='done'?esc(s.out):'<em style="color:var(--hidro)">executando…</em>'}</span></div>`:''}
+        </div>`}).join('')}
       </div>
       ${compact?'':`
       <div class="rp-sec" style="margin-top:12px"><div class="t">Fatos recuperados</div>
@@ -3093,31 +3521,17 @@ const AGENTS=(()=>{
       <div class="rp-sec"><div class="t">Limites declarados</div>
         ${run.limits.map(f=>`<div class="limit">${esc(f)}</div>`).join('')}</div>`}`;
   }
+  function statusLabel(s){return {queued:'na fila',running:'executando',gate:'aguardando gate',
+    completed:'concluída',cancelled:'cancelada',paused:'pausada',takeover:'assumida',ocioso:'ocioso'}[s]||s}
+  function statusSev(s){return {queued:'info',running:'info',gate:'atencao',completed:'normal',
+    cancelled:'critico',paused:'atencao',takeover:'modelado',ocioso:'semdados'}[s]||'semdados'}
 
-  function panel(){
-    const run=activeRun;
-    const pend=STORE.approvals.filter(a=>a.status==='pendente');
-    return `<div class="rp-sec"><div class="t">Execução de agente</div>
-      ${traceHTML(run,true)}
-      ${run?`<div class="flexr mt10">
-        <button class="btn btn-sm" onclick="AGENTS.intervene('${run.id}','pause')">❚❚ Pausar</button>
-        <button class="btn btn-sm" onclick="AGENTS.intervene('${run.id}','takeover')">✋ Assumir</button>
-        <button class="btn btn-sm btn-d" onclick="AGENTS.intervene('${run.id}','cancel')">Cancelar</button>
-      </div>`:''}</div>
-      ${pend.length?`<div class="rp-sec"><div class="t">Gates aguardando decisão</div>
-        ${pend.slice(0,3).map(a=>gateCard(a)).join('')}</div>`:''}
-      <div class="rp-sec"><div class="t">Iniciar agente</div>
-        <div class="flexc">
-          ${['A13','A12','A16','A21','A04','A10'].map(id=>`<button class="btn" onclick="AGENTS.start('${id}')">
-            <span class="badge b-modelado">${id}</span> ${esc(agente(id).nome)}</button>`).join('')}
-        </div></div>
-      ${run?`<div class="rp-sec"><div class="t">Saída estruturada</div>${traceHTML(run).split('<div class="rp-sec" style="margin-top:12px">')[1]?'<div class="rp-sec" style="margin-top:0">'+traceHTML(run).split('<div class="rp-sec" style="margin-top:12px">')[1]:''}</div>`:''}`;
-  }
   function gateCard(a){
     return `<div class="gatebox mb6">
       <div class="gt">Gate humano</div>
       <div style="font-size:11.5px;margin:4px 0">${esc(a.acao)}</div>
-      <div class="tiny faint mono mb6">${a.agentId} · confiança ${fmt(a.conf*100,0)}% · alçada ${esc(a.alcada)} · prazo ${esc(a.prazo)}</div>
+      <div class="tiny faint mono mb6">${a.agentId} · confiança ${fmt(a.conf*100,0)}% · alçada ${esc(a.alcada)} · prazo ${esc(a.prazo)}
+        ${a.escalado?'<span class="badge b-critico" style="margin-left:5px">escalado por prazo</span>':''}</div>
       <div class="tiny dim mb6">${esc(a.out)}</div>
       <div class="flexr">
         <button class="btn btn-sm btn-g" data-approve="${a.id}" data-dec="aprovada">Aprovar</button>
@@ -3125,25 +3539,48 @@ const AGENTS=(()=>{
         <button class="btn btn-sm btn-d" data-approve="${a.id}" data-dec="rejeitada">Rejeitar</button>
       </div></div>`;
   }
+  function panel(){
+    const pend=STORE.approvals.filter(a=>a.status==='pendente');
+    const act=running();
+    return `<div class="rp-sec"><div class="t">Frota · ${act.length} em execução · ${queue.length} na fila</div>
+      ${act.length?act.map(r=>`<button class="kbc w100" style="text-align:left;border-left-color:var(--hidro);margin-bottom:6px"
+        onclick="AGENTS.setActive('${r.id}')">
+        <div class="flexr"><span class="badge b-modelado">${r.agentId}</span>
+          <span class="tiny" style="flex:1">${esc(r.steps[r.stepIdx]?r.steps[r.stepIdx].n:'—')}</span></div>
+        <div style="margin-top:5px">${UI.prog(r.stepIdx/r.steps.length*100)}</div>
+      </button>`).join(''):'<div class="tiny faint">Nenhuma execução ativa neste instante.</div>'}
+    </div>
+    <div class="rp-sec"><div class="t">Execução selecionada</div>${traceHTML(activeRun,true)}
+      ${activeRun?`<div class="flexr mt10">
+        <button class="btn btn-sm" onclick="AGENTS.intervene('${activeRun.id}','pause')">❚❚ Pausar</button>
+        <button class="btn btn-sm" onclick="AGENTS.intervene('${activeRun.id}','takeover')">✋ Assumir</button>
+        <button class="btn btn-sm btn-d" onclick="AGENTS.intervene('${activeRun.id}','cancel')">Cancelar</button>
+      </div>`:''}</div>
+    ${pend.length?`<div class="rp-sec"><div class="t">Gates aguardando decisão</div>
+      ${pend.slice(0,3).map(a=>gateCard(a)).join('')}</div>`:''}
+    <div class="rp-sec"><div class="t">Iniciar agente manualmente</div>
+      <div class="flexc">
+        ${['A13','A12','A16','A21','A04','A10'].map(id=>`<button class="btn" onclick="AGENTS.start('${id}')">
+          <span class="badge b-modelado">${id}</span> ${esc(agente(id).nome)}</button>`).join('')}
+      </div></div>`;
+  }
   function approvalPanel(){
     const all=STORE.approvals;
     if(!all.length)return `<div class="rp-sec"><div class="t">Aprovações</div>
-      ${UI.state('Nenhum gate pendente','Execute um agente com ação crítica para ver o ponto de parada por autoridade.','✓')}</div>`;
+      ${UI.state('Nenhum gate pendente','A frota levanta um gate sempre que uma ação atinge um limite de autoridade.','✓')}</div>`;
     return `<div class="rp-sec"><div class="t">Fila de aprovação · ${all.filter(a=>a.status==='pendente').length} pendentes</div>
-      ${all.map(a=>a.status==='pendente'?gateCard(a):`<div class="card mb6"><div class="card-b" style="padding:8px">
-        <div class="flexr">${UI.badge(a.status,a.status==='rejeitada'?'critico':'normal')}<span class="tiny faint mono" style="margin-left:auto">${stamp(a.decidedAt||a.at)}</span></div>
+      ${all.slice(0,14).map(a=>a.status==='pendente'?gateCard(a):`<div class="card mb6"><div class="card-b" style="padding:8px">
+        <div class="flexr">${UI.badge(a.status,a.status==='rejeitada'?'critico':a.status==='expirada'?'alerta':'normal')}
+          <span class="tiny faint mono" style="margin-left:auto">${stamp(a.decidedAt||a.at)}</span></div>
         <div style="font-size:11.5px;margin-top:3px">${esc(a.acao)}</div>
         <div class="tiny faint">${a.agentId} · decidido por ${esc(a.decidedBy||'—')}</div></div></div>`).join('')}</div>`;
   }
-  function start(id){
-    APP.rightTab='agent'; APP.rightOpen=true;
-    const r=novoRun(id);
-    UI.toast('Agente iniciado',agente(id).nome+' — acompanhe o trace no painel direito ou em M18-02.','ai');
-    return r;
-  }
-  return {start,approve,intervene,panel,approvalPanel,traceHTML,gateCard,
-    runs:()=>runs, active:()=>activeRun, setActive:(r)=>{activeRun=r;APP.rerender()},
-    PLANOS};
+
+  return {start,approve,intervene,killAll,setAuto,panel,approvalPanel,traceHTML,gateCard,
+    fleet,stats,statusLabel,statusSev,
+    runs:()=>runs, queue:()=>queue, active:()=>activeRun,
+    setActive:(id)=>{const r=typeof id==='string'?runs.find(x=>x.id===id):id;if(r){activeRun=r;APP.rightTab='agent';APP.rightOpen=true;APP.rerender()}},
+    isAuto:()=>auto, PLANOS};
 })();
 </script>
 <script>
@@ -3223,7 +3660,7 @@ SCREENS.M0=[
   ])}
   <div class="grid gA" style="margin-bottom:10px">
     ${UI.card('Mapa nacional de criticidade',`<div style="height:388px">${mapBlock({center:[-51.24,-30.03],zoom:8,
-        layers:['LY-HYDRO','LY-SNIRH','LY-PREV','LY-OBS','LY-REDE','LY-MUN']})}</div>`,
+        layers:['LY-HYDRO','LY-SNIRH','LY-PREV','LY-OBS','LY-REDE','LY-MUN','LY-BAC','LY-ESTA']})}</div>`,
       {tight:true,sub:'Brasil → região → bacia → trecho → evento',
        right:`<button class="btn btn-sm" onclick="APP.go('M0-02')">Abrir mapa operacional</button>`,
        foot:srcOf('ArcGIS Maps SDK · Living Atlas · SNIRH/ANA',stamp(CLOCK.date()),'B')})}
@@ -3758,7 +4195,7 @@ SCREENS.M2=[
     ])}</div>
     <div style="flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:10px;padding:0 14px 14px">
       <div class="card" style="min-height:0">${mapBlock({center:[-51.4,-29.85],zoom:8,
-        layers:['LY-HYDRO','LY-SNIRH','LY-REDE'],noWatermark:true})}</div>
+        layers:['LY-HYDRO','LY-SNIRH','LY-REDE','LY-BAC','LY-ESTA'],noWatermark:true})}</div>
       <div class="card" style="min-height:0">
         <div class="card-h"><h3>Estações</h3><span class="sub">clique para abrir no painel direito</span></div>
         <div class="card-b tight" style="overflow:auto">${UI.table({key:'rede',entity:'estacao',rows:ESTACOES,src:'RHN',
@@ -4023,7 +4460,7 @@ SCREENS.M3=[
     ])}</div>
     <div style="flex:1 1 auto;min-height:0;padding:0 14px 14px">
       <div class="card h100">${mapBlock({center:[-51.6,-29.8],zoom:7,
-        layers:['LY-IMG','LY-HYDRO','LY-SNIRH','LY-REDE'],noWatermark:true,
+        layers:['LY-IMG','LY-HYDRO','LY-SNIRH','LY-REDE','LY-BAC','LY-ESTA'],noWatermark:true,
         overlayBottomLeft:`<div class="map-ov ov-bl"><div class="mpanel" style="width:340px">
           <div class="mh">Sensores e produtos — distinção obrigatória</div>
           <div class="mb">${tinyTable([
@@ -4050,7 +4487,7 @@ SCREENS.M3=[
   return `<div class="grid gA">
     <div class="flexc">
       ${UI.card('Trajetória e chegada estimada das células',`<div style="height:250px">${mapBlock({center:[-51.8,-29.7],zoom:8,
-        layers:['LY-HYDRO','LY-SNIRH','LY-REDE'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
+        layers:['LY-HYDRO','LY-SNIRH','LY-REDE','LY-BAC','LY-ESTA'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
         foot:srcOf('nowcast por extrapolação de eco + advecção',stamp(CLOCK.date()),'C')})}
       ${UI.card('Células rastreadas',UI.table({key:'cel',rows:cels,src:'A05 · tracking',
         cols:[
@@ -4250,7 +4687,7 @@ SCREENS.M4=[
   ])}
   <div class="grid gA">
     ${UI.card('Cobertura de modelagem',`<div style="height:330px">${mapBlock({center:[-49,-17],zoom:4,
-      layers:['LY-HYDRO','LY-SNIRH','LY-MUN'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
+      layers:['LY-HYDRO','LY-SNIRH','LY-MUN','LY-BAC','LY-ESTA'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
       foot:srcOf('M4 · registry de modelos sobre a BHO6',null,'B')})}
     ${UI.card('Fidelidade por bacia',UI.table({key:'fidbac',rows:BACIAS,noTools:true,maxh:330,
       cols:[
@@ -5247,7 +5684,7 @@ SCREENS.M8=[
  render(){
   return `<div class="grid gA">
     ${UI.card('Anomalia de precipitação esperada — La Niña · SON',`<div style="height:300px">${mapBlock({center:[-52,-15],zoom:4,
-      layers:['LY-HYDRO','LY-SNIRH'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
+      layers:['LY-HYDRO','LY-SNIRH','LY-BAC','LY-ESTA'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
       foot:srcOf('teleconexões estatísticas 1950–2025 (mock)',null,'C')})}
     ${UI.card('Teleconexões por região',UI.table({key:'tele',noTools:true,maxh:300,rows:ENSO.teleconexoes,
       cols:[
@@ -5458,7 +5895,7 @@ SCREENS.M9=[
     ]}),{tight:true,foot:srcOf('M9 · incidentes ativos',null,'B')})}
   <div class="grid g2 mt10">
     ${UI.card('Distribuição nacional',`<div style="height:280px">${mapBlock({center:[-52,-15],zoom:4,
-      layers:['LY-HYDRO','LY-SNIRH','LY-MUN','LY-RSV'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
+      layers:['LY-HYDRO','LY-SNIRH','LY-MUN','LY-RSV','LY-BAC','LY-ESTA'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
       foot:srcOf('M9 · perímetros e footprints de evento',null,'B')})}
     ${UI.card('Resumo dos eventos',`
       ${INCIDENTES.map(i=>`<div class="kbc" style="border-left-color:${sevColor(i.sev)};margin-bottom:6px"
@@ -5552,7 +5989,7 @@ SCREENS.M9=[
     </div>
     <div style="flex:1 1 auto;min-height:0;padding:0 14px 14px">
       <div class="card h100">${mapBlock({center:[-51.35,-30.0],zoom:9,
-        layers:['LY-HYDRO','LY-SNIRH','LY-OBS','LY-PREV','LY-MUN','LY-REC','LY-REDE']})}</div>
+        layers:['LY-HYDRO','LY-SNIRH','LY-OBS','LY-PREV','LY-MUN','LY-REC','LY-REDE','LY-BAC','LY-ESTA']})}</div>
     </div></div>`;
  }},
 
@@ -7582,48 +8019,93 @@ SCREENS.M17=[
    M18 — CENTRAL DE AGENTES E ORQUESTRAÇÃO
    ========================================================================== */
 SCREENS.M18=[
-{id:'M18-01',nome:'Cockpit de agentes',badge:['21','modelado'],
- obj:'Status, tarefas, filas, risco, latência e aprovações de todos os agentes em um só lugar.',
- actions:[{t:'Kill switch global',k:'btn-d',fn:()=>{AGENTS.runs().forEach(r=>{if(r.status==='running')r.status='paused'});
-   UI.toast('Kill switch acionado','Execuções pausadas com estado preservado para retomada humana.','err');APP.rerender()}}],
+{id:'M18-01',nome:'Cockpit de agentes',badge:['ao vivo','modelado'],
+ obj:'Estado da frota em tempo real: quem está executando, em que passo, com qual gatilho, e o que aguarda autoridade humana.',
+ actions:[
+   {t:'Piloto automático',fn:()=>AGENTS.setAuto(!AGENTS.isAuto())},
+   {t:'Kill switch global',k:'btn-d',fn:()=>AGENTS.killAll()}],
  render(){
-  const runs=AGENTS.runs();
-  return `${kpiRow([
-    {label:'Agentes disponíveis',value:AGENTES.length,sev:'modelado',mark:70},
-    {label:'Execuções nesta sessão',value:runs.length,sev:'info',plain:true,mark:30},
-    {label:'Aguardando gate',value:STORE.approvals.filter(a=>a.status==='pendente').length,sev:'atencao',mark:35},
-    {label:'Risco alto',value:AGENTES.filter(a=>a.risco==='alto').length,sev:'critico',mark:35},
-    {label:'Custo estimado da sessão',value:'US$ 1,68',sev:'info',plain:true,mark:20}
+  const st=AGENTS.stats(), fleet=AGENTS.fleet();
+  const ativos=fleet.filter(f=>f.status!=='ocioso');
+  const ordem={running:0,gate:1,queued:2,paused:3,takeover:4,ocioso:5};
+  fleet.sort((a,b)=>(ordem[a.status]-ordem[b.status])||a.a.id.localeCompare(b.a.id));
+  return `
+  <div class="flexr mb6" style="justify-content:space-between">
+    <div class="flexr">
+      <span class="badge ${st.auto?'b-normal':'b-atencao'}">
+        ${st.auto?'<span class="pulse" style="width:6px;height:6px;display:inline-block;border-radius:50%;background:currentColor;margin-right:4px"></span>despacho autônomo ativo':'despacho autônomo pausado'}</span>
+      <span class="tiny faint">a frota avança no relógio do cenário — mudar a velocidade no rodapé acelera as execuções</span>
+    </div>
+    <span class="tiny faint mono">concorrência máxima 4 · resfriamento de 1,2 h a 4,5 h conforme o risco</span>
+  </div>
+  ${kpiRow([
+    {label:'Em execução',value:st.running,unit:'de 3',sev:st.running?'info':'semdados',mark:st.running/3*100,
+     desc:st.queued+' na fila'},
+    {label:'Aguardando gate',value:st.gates,sev:st.gates?'atencao':'normal',mark:st.gates*18,
+     desc:'ação crítica parada por autoridade'},
+    {label:'Concluídas',value:st.completed,sev:'normal',plain:true,mark:clamp(st.completed*4,0,100),
+     desc:fmt(st.throughput,1)+' execuções/dia simulado'},
+    {label:'Chamadas de ferramenta',value:fmt0(st.toolCalls),sev:'info',plain:true,mark:clamp(st.toolCalls,0,100),
+     desc:fmt0(st.tokens)+' tokens'},
+    {label:'Custo acumulado',value:'US$ '+fmt(st.usd,2),sev:'info',plain:true,mark:clamp(st.usd*8,0,100),
+     desc:'sessão atual'}
   ])}
   <div class="grid gA">
-    ${UI.card('Iniciar agente',`<div class="grid g2" style="gap:8px">
-      ${['A13','A12','A16','A21','A04','A10'].map(id=>{const a=agente(id);
-        return `<button class="lcard" onclick="AGENTS.start('${id}')" style="text-align:left">
-          <div class="flexr"><span class="lid">${id}</span>${UI.badge(a.risco,a.risco==='alto'?'critico':'atencao')}
-            ${a.gate?UI.badge('gate','atencao'):''}</div>
-          <div class="ln" style="font-size:13.5px">${esc(a.nome)}</div>
-          <div class="ld">${esc(a.fun)}</div>
-          <div class="lf"><span class="tiny faint">${esc(a.mod)}</span>
-            <span class="tiny faint mono" style="margin-left:auto">v${a.v}</span></div>
-        </button>`}).join('')}
+    ${UI.card('Frota — '+ativos.length+' de '+fleet.length+' agentes engajados',
+      `<div class="grid g3" style="gap:8px">
+        ${fleet.map(f=>{
+          const on=f.status!=='ocioso';
+          const cor=f.status==='running'?'var(--hidro)':f.status==='gate'?'var(--atencao)':
+                    f.status==='queued'?'var(--info)':f.status==='paused'?'var(--alerta)':'var(--line2)';
+          return `<button class="kbc" style="border-left-color:${cor};${on?'':'opacity:.5'}"
+            onclick="${f.run?`AGENTS.setActive('${f.run.id}')`:`AGENTS.start('${f.a.id}')`}">
+            <div class="flexr">
+              <span class="mono tiny" style="color:${on?'var(--hidro)':'var(--faint)'}">${f.a.id}</span>
+              ${f.status==='running'?'<span class="pulse" style="background:var(--hidro)"></span>':''}
+              <span class="tiny faint" style="margin-left:auto">${esc(AGENTS.statusLabel(f.status))}</span>
+            </div>
+            <div class="t" style="font-size:11px;margin-top:3px;line-height:1.25">${esc(f.a.nome)}</div>
+            <div class="tiny faint" style="margin-top:3px;min-height:14px;line-height:1.3">${f.step?esc(f.step):'—'}</div>
+            <div style="margin-top:5px">${UI.prog(f.prog,cor)}</div>
+            <div class="flexr tiny faint" style="margin-top:4px">
+              ${f.a.gate?'<span class="badge b-atencao">gate</span>':''}
+              <span style="margin-left:auto">${f.done} concl.</span></div>
+          </button>`}).join('')}
+      </div>`,
+      {right:`<button class="btn btn-sm ${AGENTS.isAuto()?'btn-g':''}" onclick="AGENTS.setAuto(${!AGENTS.isAuto()})">
+         ${AGENTS.isAuto()?'❚❚ Pausar despacho':'▶ Retomar despacho'}</button>`,
+       foot:srcOf('M18 · frota despachada por gatilho do barramento',stamp(CLOCK.date()),'A')})}
+    <div class="flexc">
+      ${UI.card('Gates aguardando autoridade',
+        st.gates?STORE.approvals.filter(a=>a.status==='pendente').slice(0,4).map(a=>AGENTS.gateCard(a)).join('')
+        :UI.state('Nenhum gate pendente','Ações críticas param aqui automaticamente quando surgem.','✓'),
+        {right:`<button class="btn btn-sm" onclick="APP.go('M18-03')">Fila completa</button>`,
+         foot:srcOf('M18 · pontos de autoridade humana',null,'A')})}
+      ${UI.card('Atividade da frota',CH.lines({h:150,x0:0,x1:72,y0:0,yd:0,
+        xt:[{v:0,l:'0h'},{v:36,l:'36h'},{v:72,l:'72h'}],now:CLOCK.hour(),
+        series:[{c:'#9D7BFF',fill:true,pts:(()=>{
+          const b=[];for(let i=0;i<=24;i++){const h0=i*3;
+            b.push([h0,AGENTS.runs().filter(r=>r.queuedH>=h0&&r.queuedH<h0+3).length])}
+          return b})()}]}),
+        {sub:'execuções despachadas por janela de 3 h',foot:srcOf('M18 · telemetria da sessão',null,'A')})}
     </div>
-    ${limitNote('Nenhum agente publica, assina, sanciona, opera estrutura ou promove modelo. Ações críticas param em gate humano.')}`,
-      {sub:'os seis agentes com plano completo neste ambiente',
-       foot:srcOf('M18 · catálogo executável',null,'A')})}
-    ${UI.card('Execuções da sessão',
-      runs.length?UI.table({key:'runs',noTools:true,maxh:300,rows:runs,
-        onSelect:r=>{AGENTS.setActive(r);APP.rightTab='agent';APP.rightOpen=true},
-        cols:[
-          {k:'id',t:'Execução',get:r=>`<span class="mono tiny">${r.id}</span>`},
-          {k:'agentId',t:'Agente',get:r=>`<span class="badge b-modelado">${r.agentId}</span>`},
-          {k:'obj',t:'Objetivo',cls:'wrap'},
-          {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='alto'?'critico':'atencao')},
-          {k:'status',t:'Status',get:r=>UI.badge(r.status,r.status==='completed'?'normal':r.status==='approval'?'atencao':r.status==='cancelled'?'critico':'info')},
-          {k:'started',t:'Início',get:r=>`<span class="mono">${hhmm(r.started)}</span>`}
-        ]})
-      :UI.state('Nenhuma execução ainda','Inicie um agente ao lado para acompanhar plano, passos, ferramentas e gates em tempo real.','◈'),
-      {tight:true,foot:srcOf('M18 · trace observável',null,'A')})}
-  </div>`;
+  </div>
+  <div class="mt10">${UI.card('Execuções da sessão',
+    AGENTS.runs().length?UI.table({key:'runs18',rows:AGENTS.runs(),src:'M18',maxh:300,
+      onSelect:r=>AGENTS.setActive(r.id),
+      cols:[
+        {k:'id',t:'Execução',get:r=>`<span class="mono tiny">${r.id}</span>`},
+        {k:'agentId',t:'Agente',get:r=>`<span class="badge b-modelado">${r.agentId}</span> ${esc(agente(r.agentId).nome)}`},
+        {k:'trigger',t:'Gatilho',cls:'wrap'},
+        {k:'queuedH',t:'Enfileirada',cls:'n',get:r=>'h+'+fmt(r.queuedH,1)},
+        {k:'stepIdx',t:'Passo',cls:'n',get:r=>`${Math.min(r.stepIdx+1,r.steps.length)}/${r.steps.length}`},
+        {k:'toolCalls',t:'Chamadas',cls:'n'},
+        {k:'usd',t:'Custo',cls:'n',get:r=>'US$ '+fmt(r.usd,3)},
+        {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='alto'?'critico':r.risco==='médio'?'atencao':'normal')},
+        {k:'status',t:'Status',get:r=>UI.badge(AGENTS.statusLabel(r.status),AGENTS.statusSev(r.status))}
+      ]})
+    :UI.state('Aguardando o primeiro despacho','A frota reage a eventos do barramento. Avance o relógio ou aumente a velocidade no rodapé.','◈'),
+    {tight:true,foot:srcOf('M18 · trace observável por execução',null,'A')})}</div>`;
  }},
 
 {id:'M18-02',nome:'Trace ao vivo',
@@ -7633,8 +8115,14 @@ SCREENS.M18=[
    {t:'Assumir controle',fn:()=>{const r=AGENTS.active();if(r)AGENTS.intervene(r.id,'takeover');else UI.toast('Nenhuma execução ativa','','warn')}}],
  render(){
   const r=AGENTS.active();
+  const act=AGENTS.runs().filter(x=>x.status==='running'||x.status==='gate');
   return `<div class="grid gA">
-    ${UI.card('Trace da execução',AGENTS.traceHTML(r),
+    ${UI.card('Trace da execução',
+      (act.length?`<div class="flexr mb6" style="padding-bottom:7px;border-bottom:1px solid var(--line)">
+        <span class="eyebrow">Ao vivo</span>
+        ${act.map(x=>`<button class="btn btn-sm ${r&&r.id===x.id?'btn-p':''}" onclick="AGENTS.setActive('${x.id}')">
+          <span class="badge b-modelado">${x.agentId}</span> ${esc(AGENTS.statusLabel(x.status))}</button>`).join('')}
+      </div>`:'')+AGENTS.traceHTML(r),
       {sub:r?'atualização em tempo real':'aguardando execução',
        right:r?`<button class="btn btn-sm btn-d" onclick="AGENTS.intervene('${r.id}','cancel')">Cancelar</button>`:'',
        foot:srcOf('M18 · fatos, inferências, hipóteses e recomendações separados',null,'A')})}
@@ -7668,7 +8156,8 @@ SCREENS.M18=[
   const dec=STORE.approvals.filter(a=>a.status!=='pendente');
   setTimeout(()=>{$$('#canvas [data-approve]').forEach(b=>b.onclick=()=>AGENTS.approve(b.dataset.approve,b.dataset.dec))},0);
   return `${kpiRow([
-    {label:'Gates pendentes',value:pend.length,sev:pend.length?'atencao':'normal',mark:pend.length*20},
+    {label:'Gates pendentes',value:pend.length,sev:pend.length?'atencao':'normal',mark:pend.length*20,
+     desc:'levantados pela frota autônoma'},
     {label:'Decididos nesta sessão',value:dec.length,sev:'info',plain:true,mark:dec.length*15},
     {label:'Aprovados',value:dec.filter(a=>a.status==='aprovada').length,sev:'normal',mark:40},
     {label:'Rejeitados',value:dec.filter(a=>a.status==='rejeitada').length,sev:'critico',mark:20},
@@ -7747,12 +8236,16 @@ SCREENS.M18=[
  actions:[{t:'Rotular execução',fn:()=>UI.toast('Rótulo aplicado','Feedback vinculado à execução e à suite de avaliação.','ok')},
    {t:'Retirar agente',k:'btn-d',fn:()=>UI.toast('Retirada solicitada','Encaminhada à governança em M16 com justificativa.','warn')}],
  render(){
+  const st=AGENTS.stats();
+  const tot=st.completed+st.cancelled;
   return `${kpiRow([
     {label:'Groundedness média',value:fmt(AGENTES.reduce((s,a)=>s+a.aval,0)/AGENTES.length,2),sev:'normal',plain:true,mark:88},
-    {label:'Taxa de sucesso',value:'94,2',unit:'%',sev:'normal',mark:94},
-    {label:'Latência média',value:'12,4',unit:'s',sev:'normal',plain:true,mark:30},
+    {label:'Execuções na sessão',value:AGENTS.runs().length,sev:'info',plain:true,mark:clamp(AGENTS.runs().length*3,0,100),
+     desc:st.completed+' concluídas · '+st.cancelled+' canceladas'},
+    {label:'Taxa de conclusão',value:tot?fmt(st.completed/tot*100,1):'—',unit:'%',sev:'normal',mark:tot?st.completed/tot*100:0},
     {label:'Intervenções humanas',value:STORE.audits.length,sev:'info',plain:true,mark:25},
-    {label:'Custo 30 d',value:'US$ 412',sev:'info',plain:true,mark:35}
+    {label:'Custo da sessão',value:'US$ '+fmt(st.usd,2),sev:'info',plain:true,mark:clamp(st.usd*8,0,100),
+     desc:fmt0(st.tokens)+' tokens'}
   ])}
   <div class="grid gA">
     ${UI.card('Desempenho por agente',UI.table({key:'perf18',noTools:true,rows:AGENTES.map(a=>({
