@@ -420,6 +420,31 @@ textarea.inp{height:auto;padding:6px 8px;resize:vertical;line-height:1.45;width:
 .gatebox{border:1px solid var(--atencao);background:var(--a-bg);border-radius:var(--r2);padding:9px}
 .gatebox .gt{font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--atencao)}
 
+/* ---------- controles deslizantes do simulador ---------- */
+.rng{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;
+  background:linear-gradient(90deg,var(--line2),var(--hidro));outline:none;margin:6px 0}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:var(--hidro);border:2px solid var(--panel);cursor:pointer;box-shadow:0 0 0 1px var(--line2)}
+.rng::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--hidro);
+  border:2px solid var(--panel);cursor:pointer}
+.simctl{display:grid;gap:3px;margin-bottom:11px}
+.simctl .hd{display:flex;align-items:baseline;gap:6px;font-size:11.5px}
+.simctl .hd b{color:var(--ink)}
+.simctl .hd .v{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--hidro)}
+.simctl .ex{font-size:10px;color:var(--faint);line-height:1.35}
+.swt{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:11.5px;color:var(--ink2)}
+.swt i{width:32px;height:17px;border-radius:9px;background:var(--line2);position:relative;transition:background .18s;flex:0 0 32px}
+.swt i::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
+  background:var(--panel);transition:transform .18s}
+.swt.on i{background:var(--hidro)}
+.swt.on i::after{transform:translateX(15px)}
+.cmpcol{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;background:var(--surface)}
+.cmpcol.mid{border-color:var(--hidro);box-shadow:0 0 0 1px var(--hidro)}
+.cmpcol .ch{padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(20,41,54,.5)}
+.cmpcol .cb{padding:9px 10px}
+.lane{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:start}
+@media(max-width:1250px){.lane{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 /* ---------- estados ---------- */
 .state{display:grid;place-items:center;padding:26px 14px;text-align:center;gap:7px;color:var(--muted);font-size:11.5px}
 .state .ic{font-size:22px;opacity:.5}
@@ -1163,32 +1188,233 @@ const MODELOS=[
   dono:'Climatologia',skill:0.63,status:'produção',uso:'Probabilidades sazonais, nunca determinismo.',cls:'C'}
 ];
 
-/* ---------------- ENSO Água Brasil (M8) -------------------------------- */
-const ENSO={
-  fase:'La Niña', intensidade:'fraca a moderada', nino34:-0.94, tendencia:'consolidação',
-  janela:'SON 2026 – JFM 2027',
+</script>
+<script>
+/* ============================================================================
+   M8 — ENSO ÁGUA BRASIL · núcleo de dados e modelo de custo
+   Estado observado em agosto de 2026: El Niño em fortalecimento.
+   O ENSO altera probabilidades. Não determina isoladamente nenhum evento.
+   ========================================================================== */
+
+const ENSO = {
+  fase:'El Niño', intensidade:'forte, em fortalecimento', alerta:'El Niño Advisory',
+  alertaDesde:'11/06/2026', alertaOrigem:'NOAA/CPC — elevado de Watch para Advisory',
+  nino34:2.7, nino34Data:'17/08/2026', oni:1.39, oniJanela:'MJJ 2026',
+  tendencia:'aquecimento contínuo com piscina quente subsuperficial',
+  janela:'SON 2026 – MAM 2027', proxAtualizacao:'10/09/2026 · CPC',
   fontes:[
-    {org:'NOAA/CPC',prob:{lanina:71,neutro:26,elnino:3},atual:'2026-08-14',ver:'IRI/CPC plume'},
-    {org:'INPE/CPTEC',prob:{lanina:66,neutro:30,elnino:4},atual:'2026-08-11',ver:'Boletim mensal'},
-    {org:'IRI',prob:{lanina:69,neutro:27,elnino:4},atual:'2026-08-18',ver:'Multi-model'},
-    {org:'BoM',prob:{lanina:62,neutro:33,elnino:5},atual:'2026-08-12',ver:'ENSO Wrap-Up'}
+    {org:'NOAA/CPC',    prob:{elnino:99,neutro:1, lanina:0}, atual:'13/08/2026', ver:'Diagnostic Discussion'},
+    {org:'IRI',         prob:{elnino:97,neutro:3, lanina:0}, atual:'19/08/2026', ver:'Multi-model plume'},
+    {org:'INPE/CPTEC',  prob:{elnino:94,neutro:6, lanina:0}, atual:'12/08/2026', ver:'Boletim mensal'},
+    {org:'BoM',         prob:{elnino:92,neutro:8, lanina:0}, atual:'11/08/2026', ver:'ENSO Wrap-Up'}
   ],
-  consenso:{lanina:67,neutro:29,elnino:4,concordancia:0.86},
-  teleconexoes:[
-    {reg:'Sul do Brasil',var:'Precipitação',sinal:'negativo',mag:-24,lag:'0–2 meses',conf:'B',nota:'Sinal historicamente robusto em primavera e verão.'},
-    {reg:'Norte/Nordeste (norte)',var:'Precipitação',sinal:'positivo',mag:+18,lag:'1–3 meses',conf:'B',nota:'Aumento de chuva no setor norte da Amazônia.'},
-    {reg:'Nordeste (semiárido)',var:'Precipitação',sinal:'positivo',mag:+11,lag:'2–4 meses',conf:'C',nota:'Depende fortemente do Atlântico Tropical.'},
-    {reg:'Centro-Oeste',var:'Precipitação',sinal:'neutro',mag:+3,lag:'—',conf:'D',nota:'Influência fraca e inconsistente entre eventos.'},
-    {reg:'Sudeste',var:'Precipitação',sinal:'neutro',mag:-4,lag:'1–2 meses',conf:'D',nota:'Sinal ambíguo; alta variabilidade interna.'},
-    {reg:'Sul do Brasil',var:'Temperatura',sinal:'positivo',mag:+0.6,lag:'0–2 meses',conf:'C',nota:'Anomalia positiva moderada.'}
+  consenso:{elnino:96, neutro:4, lanina:0, concordancia:0.93},
+  marcos:[
+    ['Mar 2026','La Niña encerrada · transição para neutro','normal'],
+    ['Jun 2026','El Niño Watch elevado para Advisory','atencao'],
+    ['Ago 2026','Niño-3.4 semanal em +2,7 °C','alerta'],
+    ['OND 2026','Pico projetado · 69% de chance de recorde desde 1950','critico'],
+    ['MAM 2027','Enfraquecimento projetado','info']
   ],
-  analogos:[
-    {ano:'2020-21',sim:0.88,desfecho:'Estiagem severa no Sul; afluências no Paraná abaixo da média.',dif:'Atlântico mais frio no análogo.'},
-    {ano:'2010-11',sim:0.79,desfecho:'Seca no Sul e cheia no Nordeste setentrional.',dif:'Intensidade maior do evento análogo.'},
-    {ano:'2007-08',sim:0.74,desfecho:'Redução de vazões no Uruguai e Guaíba no verão.',dif:'Fase de transição mais rápida.'},
-    {ano:'2017-18',sim:0.68,desfecho:'Sinal fraco; sem impacto hídrico dominante.',dif:'La Niña muito fraca e curta.'}
-  ]
+  simulated:false, fonteNota:'Valores públicos de NOAA/CPC, IRI, INPE/CPTEC e BoM consultados em 24/08/2026.'
 };
+
+/* --------- Trimestres: a convergência cresce à medida que o prazo encurta --- */
+const TRIMESTRES = [
+  {id:'SON26', nome:'SON 2026', lead:1, prob:99, conc:0.93, sev:0.58, oni:1.9},
+  {id:'OND26', nome:'OND 2026', lead:2, prob:99, conc:0.91, sev:0.86, oni:2.5},
+  {id:'NDJ26', nome:'NDJ 2026', lead:3, prob:98, conc:0.87, sev:1.00, oni:2.6},
+  {id:'DJF27', nome:'DJF 2026-27', lead:4, prob:97, conc:0.80, sev:0.92, oni:2.3},
+  {id:'JFM27', nome:'JFM 2027', lead:5, prob:93, conc:0.71, sev:0.71, oni:1.8},
+  {id:'MAM27', nome:'MAM 2027', lead:6, prob:74, conc:0.58, sev:0.44, oni:1.1}
+];
+const trimestre = id => TRIMESTRES.find(t=>t.id===id) || TRIMESTRES[1];
+
+/* Convergência combina concordância entre fontes, prazo e skill regional */
+function convergencia(t, skillReg){
+  const prazo = clamp(1 - (t.lead-1)/7, 0, 1);
+  return clamp(0.5*t.conc + 0.3*prazo + 0.2*(skillReg==null?0.72:skillReg), 0, 1);
+}
+function classeConf(c){ return c>=0.86?'A' : c>=0.74?'B' : c>=0.60?'C' : 'D'; }
+
+/* --------- Sinal regional do El Niño no Brasil ----------------------------- */
+/* chuva: anomalia % · risco: cheia|seca · skill: aderência histórica regional */
+const ENSO_SINAL = [
+  {rh:'RH-ATS', nome:'Atlântico Sul',            chuva:+34, temp:+0.9, risco:'cheia', grau:'alto',   skill:0.86, conf:'B',
+   nota:'Sinal mais robusto do país. Primavera e início do verão concentram o excesso.'},
+  {rh:'RH-URU', nome:'Uruguai',                  chuva:+38, temp:+1.0, risco:'cheia', grau:'alto',   skill:0.84, conf:'B',
+   nota:'Bacia de resposta rápida. Taquari-Antas responde em horas, não em dias.'},
+  {rh:'RH-PRN', nome:'Paraná',                   chuva:+16, temp:+0.7, risco:'cheia', grau:'médio',  skill:0.71, conf:'C',
+   nota:'Afluência acima da média favorece geração, mas eleva risco em reservatórios cheios.'},
+  {rh:'RH-AMZ', nome:'Amazônica',                chuva:-29, temp:+1.4, risco:'seca',  grau:'alto',   skill:0.82, conf:'B',
+   nota:'Vazante severa. Restrição de calado e isolamento de comunidades ribeirinhas.'},
+  {rh:'RH-TOA', nome:'Tocantins-Araguaia',       chuva:-19, temp:+1.1, risco:'seca',  grau:'médio',  skill:0.68, conf:'C',
+   nota:'Redução de afluência com efeito sobre a cascata do Tocantins.'},
+  {rh:'RH-ANO', nome:'Atlântico NE Ocidental',   chuva:-22, temp:+1.0, risco:'seca',  grau:'alto',   skill:0.74, conf:'C',
+   nota:'Estação chuvosa comprometida no norte do Nordeste.'},
+  {rh:'RH-PNB', nome:'Parnaíba',                 chuva:-24, temp:+1.1, risco:'seca',  grau:'alto',   skill:0.72, conf:'C',
+   nota:'Recarga de aquífero abaixo do necessário para a próxima estiagem.'},
+  {rh:'RH-ANE', nome:'Atlântico NE Oriental',    chuva:-21, temp:+0.9, risco:'seca',  grau:'alto',   skill:0.70, conf:'C',
+   nota:'Reservatórios já baixos entram na seca com menor folga.'},
+  {rh:'RH-SFR', nome:'São Francisco',            chuva:-17, temp:+1.2, risco:'seca',  grau:'alto',   skill:0.73, conf:'C',
+   nota:'Sobradinho e Três Marias em trajetória de deplecionamento.'},
+  {rh:'RH-ATL', nome:'Atlântico Leste',          chuva:-13, temp:+0.9, risco:'seca',  grau:'médio',  skill:0.64, conf:'D',
+   nota:'Sinal moderado, com alta variabilidade entre eventos.'},
+  {rh:'RH-ASE', nome:'Atlântico Sudeste',        chuva:+7,  temp:+0.8, risco:'cheia', grau:'baixo',  skill:0.48, conf:'D',
+   nota:'Sinal fraco. Não usar como gatilho: a ZCAS domina a variabilidade local.'},
+  {rh:'RH-PGY', nome:'Paraguai',                 chuva:+9,  temp:+1.0, risco:'cheia', grau:'baixo',  skill:0.52, conf:'D',
+   nota:'Alguma recuperação no Pantanal, insuficiente para reverter o déficit acumulado.'}
+];
+
+/* --------- Cadeias e usos com gargalo hídrico ------------------------------ */
+/* tipo do gargalo: captação · outorga · irrigação · indústria · logística     */
+const CADEIAS_ENSO = [
+  {id:'CD-01', nome:'Abastecimento urbano metropolitano', setor:'Saneamento', gargalo:'captação', rh:'RH-ANE',
+   uf:'PE, PB, RN', risco:'seca', exp:'alto', pop:8400000, demanda:42, disp:31, folga:-26,
+   nota:'Cota de tomada d’água abaixo do nível projetado em três sistemas produtores.'},
+  {id:'CD-02', nome:'Irrigação do Vale do São Francisco', setor:'Agricultura', gargalo:'irrigação', rh:'RH-SFR',
+   uf:'BA, PE', risco:'seca', exp:'alto', pop:640000, demanda:186, disp:142, folga:-24,
+   nota:'Fruticultura irrigada com demanda outorgada acima da disponibilidade projetada.'},
+  {id:'CD-03', nome:'Navegação do Madeira e Amazonas', setor:'Logística', gargalo:'logística', rh:'RH-AMZ',
+   uf:'AM, RO, PA', risco:'seca', exp:'alto', pop:1830000, demanda:0, disp:0, folga:-38,
+   nota:'Calado restrito compromete escoamento de grãos e abastecimento de combustível.'},
+  {id:'CD-04', nome:'Geração hidrelétrica do Nordeste', setor:'Energia', gargalo:'outorga', rh:'RH-SFR',
+   uf:'BA, PE, AL, SE', risco:'seca', exp:'alto', pop:0, demanda:1300, disp:900, folga:-31,
+   nota:'Defluência mínima de Sobradinho em conflito com demanda de geração.'},
+  {id:'CD-05', nome:'Polo industrial e petroquímico', setor:'Indústria', gargalo:'indústria', rh:'RH-ATL',
+   uf:'BA', risco:'seca', exp:'médio', pop:0, demanda:24, disp:19, folga:-21,
+   nota:'Uso consuntivo industrial competindo com abastecimento humano.'},
+  {id:'CD-06', nome:'Arroz irrigado da planície costeira', setor:'Agricultura', gargalo:'irrigação', rh:'RH-ATS',
+   uf:'RS', risco:'cheia', exp:'alto', pop:0, demanda:640, disp:1180, folga:+84,
+   nota:'Excesso hídrico: risco é de perda por submersão e atraso de colheita, não de falta.'},
+  {id:'CD-07', nome:'Abastecimento da região metropolitana de Porto Alegre', setor:'Saneamento', gargalo:'captação', rh:'RH-ATS',
+   uf:'RS', risco:'cheia', exp:'alto', pop:4568000, demanda:38, disp:52, folga:+37,
+   nota:'Risco de qualidade da água bruta por refluxo e extravasamento, não de quantidade.'},
+  {id:'CD-08', nome:'Hidrovia Tietê-Paraná', setor:'Logística', gargalo:'logística', rh:'RH-PRN',
+   uf:'SP, MS, PR', risco:'cheia', exp:'médio', pop:0, demanda:0, disp:0, folga:+18,
+   nota:'Afluência elevada favorece calado, mas eleva restrição em eclusas durante vertimento.'},
+  {id:'CD-09', nome:'Captação para mineração e beneficiamento', setor:'Indústria', gargalo:'outorga', rh:'RH-TOA',
+   uf:'PA, TO', risco:'seca', exp:'médio', pop:0, demanda:31, disp:26, folga:-16,
+   nota:'Outorgas concedidas em trecho com disponibilidade projetada menor.'},
+  {id:'CD-10', nome:'Perímetros irrigados do Jaguaribe', setor:'Agricultura', gargalo:'irrigação', rh:'RH-ANE',
+   uf:'CE', risco:'seca', exp:'alto', pop:410000, demanda:78, disp:41, folga:-47,
+   nota:'Castanhão em volume crítico. Alocação negociada já em vigor.'},
+  {id:'CD-11', nome:'Termelétricas com captação em rio', setor:'Energia', gargalo:'captação', rh:'RH-PRN',
+   uf:'SP, MG', risco:'seca', exp:'médio', pop:0, demanda:19, disp:17, folga:-11,
+   nota:'Acionamento térmico eleva demanda de resfriamento no mesmo período de estiagem.'},
+  {id:'CD-12', nome:'Dessedentação animal no semiárido', setor:'Agropecuária', gargalo:'captação', rh:'RH-PNB',
+   uf:'PI, CE, RN', risco:'seca', exp:'alto', pop:1240000, demanda:14, disp:9, folga:-36,
+   nota:'Uso prioritário por lei, mas dependente de fontes difusas sem monitoramento.'},
+  {id:'CD-13', nome:'Celulose e papel', setor:'Indústria', gargalo:'indústria', rh:'RH-ATS',
+   uf:'RS, SC', risco:'cheia', exp:'baixo', pop:0, demanda:22, disp:34, folga:+35,
+   nota:'Sem restrição de quantidade. Risco logístico de escoamento por inundação.'},
+  {id:'CD-14', nome:'Piscicultura e pesca continental', setor:'Agropecuária', gargalo:'outorga', rh:'RH-AMZ',
+   uf:'AM, PA', risco:'seca', exp:'alto', pop:290000, demanda:0, disp:0, folga:-42,
+   nota:'Mortandade por temperatura e redução de lâmina. Efeito direto sobre segurança alimentar.'}
+];
+
+/* --------- Modelo de custo projetado em cinco dimensões -------------------- */
+/* Cada componente traz base (valor no cenário de severidade 1,00), unidade e
+   as cadeias que o originam. A faixa se estreita conforme a convergência sobe. */
+const DIMENSOES = [
+  {id:'fin', nome:'Financeiro', un:'R$ bi', sev:'critico', ic:'chart',
+   desc:'Perda de produção, substituição energética e custo logístico adicional.',
+   comp:[
+     {n:'Substituição térmica da geração', base:14.2, cad:['CD-04','CD-11'], conf:0.78},
+     {n:'Perda agrícola por seca',          base:11.6, cad:['CD-02','CD-10','CD-12'], conf:0.71},
+     {n:'Perda agrícola por excesso hídrico',base:5.4, cad:['CD-06'], conf:0.66},
+     {n:'Custo logístico hidroviário',      base:4.8,  cad:['CD-03','CD-08'], conf:0.74},
+     {n:'Restrição de captação industrial', base:3.1,  cad:['CD-05','CD-09','CD-13'], conf:0.62},
+     {n:'Resposta e assistência',           base:2.7,  cad:['CD-01','CD-07'], conf:0.69}
+   ]},
+  {id:'hum', nome:'Humano', un:'mi de pessoas', sev:'critico', ic:'users',
+   desc:'População exposta a desabastecimento, inundação ou isolamento.',
+   comp:[
+     {n:'Risco de desabastecimento',        base:9.6,  cad:['CD-01','CD-12'], conf:0.73},
+     {n:'Exposição a inundação no Sul',     base:2.1,  cad:['CD-07'], conf:0.79},
+     {n:'Comunidades isoladas por vazante', base:0.62, cad:['CD-03','CD-14'], conf:0.76},
+     {n:'Trabalhadores em setor afetado',   base:4.4,  cad:['CD-02','CD-10','CD-06'], conf:0.64}
+   ]},
+  {id:'soc', nome:'Social', un:'municípios', sev:'alerta', ic:'flag',
+   desc:'Municípios em situação de emergência e serviços interrompidos.',
+   comp:[
+     {n:'Municípios em emergência por seca', base:1180, cad:['CD-01','CD-10','CD-12'], conf:0.70},
+     {n:'Municípios em emergência por cheia',base:264,  cad:['CD-07','CD-06'], conf:0.77},
+     {n:'Unidades de saúde com operação afetada',base:1420, cad:['CD-01','CD-07'], conf:0.58},
+     {n:'Escolas com interrupção',          base:5600, cad:['CD-07','CD-03'], conf:0.55}
+   ]},
+  {id:'inf', nome:'Infraestrutura', un:'ativos', sev:'alerta', ic:'build',
+   desc:'Ativos críticos com operação comprometida ou fora de faixa.',
+   comp:[
+     {n:'ETA com captação comprometida',    base:412, cad:['CD-01','CD-07'], conf:0.75},
+     {n:'Reservatórios em faixa crítica',   base:38,  cad:['CD-04','CD-10'], conf:0.81},
+     {n:'Trechos hidroviários restritos (mil km)',base:6.4, cad:['CD-03','CD-08'], conf:0.72},
+     {n:'Travessias e rodovias interrompidas',base:186, cad:['CD-07'], conf:0.63},
+     {n:'Subestações em risco',             base:24,  cad:['CD-07'], conf:0.59}
+   ]},
+  {id:'amb', nome:'Ambiental', un:'ocorrências', sev:'atencao', ic:'world',
+   desc:'Vazão ecológica, qualidade da água e estresse sobre biomas.',
+   comp:[
+     {n:'Trechos com vazão ecológica não atendida',base:96, cad:['CD-04','CD-09'], conf:0.66},
+     {n:'Eventos de mortandade de fauna aquática',base:141, cad:['CD-14'], conf:0.61},
+     {n:'Trechos com qualidade fora do padrão',base:218, cad:['CD-05','CD-07'], conf:0.64},
+     {n:'Área de bioma sob estresse (mil km²)',base:340, cad:['CD-03','CD-14'], conf:0.57}
+   ]}
+];
+
+/* Estado da interface do módulo */
+const ENSOUI = { tri:'OND26', dim:'fin', gargalo:'todos' };
+
+/* Cálculo central: faixa que estreita conforme a convergência aumenta */
+function projetarCusto(triId){
+  const t = trimestre(triId);
+  return DIMENSOES.map(d=>{
+    const comps = d.comp.map(c=>{
+      const conv = convergencia(t, c.conf);
+      const largura = 0.60 - 0.40*conv;           // ±% em torno do valor central
+      const central = c.base * t.sev;
+      return {
+        nome:c.n, cadeias:c.cad, conv,
+        p25: central*(1-largura), p50: central, p75: central*(1+largura),
+        conf: classeConf(conv), amplitude: largura*2
+      };
+    });
+    const soma = k => comps.reduce((s,c)=>s+c[k],0);
+    const convMedia = comps.reduce((s,c)=>s+c.conv,0)/comps.length;
+    return {
+      id:d.id, nome:d.nome, un:d.un, sev:d.sev, ic:d.ic, desc:d.desc, comp:comps,
+      p25:soma('p25'), p50:soma('p50'), p75:soma('p75'),
+      conv:convMedia, conf:classeConf(convMedia),
+      amplitude:(soma('p75')-soma('p25'))/(soma('p50')||1)
+    };
+  });
+}
+function dimAtual(){ return projetarCusto(ENSOUI.tri).find(d=>d.id===ENSOUI.dim) || projetarCusto(ENSOUI.tri)[0]; }
+function fmtDim(v,un){
+  if(un==='R$ bi') return 'R$ '+fmt(v,1)+' bi';
+  if(un==='mi de pessoas') return fmt(v,2)+' mi';
+  if(un==='mil km²') return fmt(v,0)+' mil km²';
+  return fmt0(v);
+}
+const GARGALOS = [
+  ['captação',  'Cota de tomada d’água abaixo do nível operacional', 'critico'],
+  ['outorga',   'Demanda outorgada acima da disponibilidade projetada','critico'],
+  ['irrigação', 'Área irrigada dependente de fonte em déficit',       'alerta'],
+  ['indústria', 'Uso consuntivo competindo com uso prioritário',      'alerta'],
+  ['logística', 'Calado ou eclusa fora da faixa operacional',         'atencao']
+];
+
+/* Análogos históricos de El Niño forte */
+const ANALOGOS_EN = [
+  {ano:'1997-98', oni:2.4, sim:0.91, desfecho:'Cheias severas no Sul e seca extrema na Amazônia e no Nordeste.',
+   dif:'Menor capacidade de reservação e monitoramento do que hoje.', custo:'R$ 34 bi (valores corrigidos)'},
+  {ano:'2015-16', oni:2.6, sim:0.88, desfecho:'Vazante recorde no Amazonas, crise hídrica no Nordeste e no Sudeste.',
+   dif:'Sobreposição com crise hídrica preexistente no Sudeste.', custo:'R$ 41 bi (valores corrigidos)'},
+  {ano:'1982-83', oni:2.2, sim:0.79, desfecho:'Enchentes históricas no Sul e seca prolongada no semiárido.',
+   dif:'Uso do solo e área irrigada muito menores.', custo:'sem série comparável'},
+  {ano:'2023-24', oni:2.0, sim:0.84, desfecho:'Seca recorde na Amazônia com isolamento de comunidades.',
+   dif:'Evento mais curto e com pico deslocado.', custo:'R$ 27 bi (valores corrigidos)'}
+];
 </script>
 <script>
 /* ============================================================================
@@ -1211,7 +1437,8 @@ const STORE = {
     ['AL-4452','Latência do Hidrowebservice acima do SLA','atencao','M17','412 ms médios contra SLA de 250 ms. Fallback de cache ativo.','DevSecOps',20,'ativo'],
     ['AL-4449','Aquisição SAR simulada disponível — v13','info','M6','Produto sintético ingerido e aprovado no QA.','Monitoramento',33,'fechado'],
     ['AL-4444','Castanhão abaixo de 13% do volume útil','critico','M10','Volume crítico persistente por 21 dias.','L. Freitas',-1200,'ativo'],
-    ['AL-4438','Perspectiva ENSO atualizada — La Niña 67%','info','M8','Consenso de quatro fontes para o trimestre SON.','Climatologia',-40,'reconhecido'],
+    ['AL-4438','El Niño Advisory — consenso de 96% para SON/OND','alerta','M8','Quatro fontes institucionais. Evento muito forte com probabilidade acima de 90% no verão 2026-27.','Climatologia',-40,'reconhecido'],
+    ['AL-4436','Folga hídrica negativa em 10 cadeias produtivas','alerta','M8','Captação, outorga e irrigação em déficit projetado no Norte, Nordeste e São Francisco.','Climatologia',-30,'ativo'],
     ['AL-4431','Vazante do Madeira abaixo do percentil 5','alerta','M9','Restrição de calado mantida para a navegação.','D. Nakamura',-900,'reconhecido']
   ];
   A.forEach(a=>STORE.alerts.push({
@@ -2572,11 +2799,11 @@ const MODULOS=[
   users:'Modeladores, operações, auditoria de modelos e gestores de risco.',
   menu:['Comparador triplo','Métricas espaciais','Divergências','Recalibração','Skill histórico'],
   agentes:['A13','A08','A07']},
- {id:'M8', nome:'ENSO Água Brasil — El Niño e La Niña', curto:'ENSO Água Brasil', sev:'info',
-  mis:'Traduzir o estado e a probabilidade do ENSO em impactos hídricos regionais, cenários e decisões.',
-  users:'Climatologistas, hidrólogos, planejamento, reservatórios, dirigentes e comunicação.',
-  menu:['Painel ENSO','Mapa de teleconexões','Impacto por bacia','Plano de preparação','Análogos históricos'],
-  agentes:['A15','A08','A18']},
+ {id:'M8', nome:'ENSO Água Brasil — El Niño e La Niña', curto:'ENSO Água Brasil', sev:'critico',
+  mis:'Traduzir o estado e a probabilidade do ENSO em impacto hídrico regional, gargalo por cadeia e custo projetado por dimensão.',
+  users:'Climatologistas, hidrólogos, planejamento, reservatórios, regulação, dirigentes e comunicação.',
+  menu:['Painel ENSO','Sinal regional','Impacto hidrológico','Cadeias e gargalos','Custo projetado','Simulador e cenários','Propagação em cadeia','Preparação','Análogos'],
+  agentes:['A15','A08','A12']},
  {id:'M9', nome:'Secas, Cheias e Eventos Críticos', curto:'Eventos Críticos', sev:'critico',
   mis:'Detectar, classificar e acompanhar eventos hidrológicos críticos em um registro único e auditável.',
   users:'Salas de situação, monitoramento, defesa civil, comunicação e gestores.',
@@ -5637,173 +5864,362 @@ SCREENS.M7=[
  }}
 ];
 
+</script>
+<script>
 /* ============================================================================
-   M8 — ENSO ÁGUA BRASIL
+   M8 — ENSO ÁGUA BRASIL (reconstruído para El Niño 2026-27)
    ========================================================================== */
+function selTri(){
+  setTimeout(()=>{$$('#segTri button').forEach(b=>b.onclick=()=>{ENSOUI.tri=b.dataset.t;APP.rerender()})},0);
+  return `<span class="seg" id="segTri">${TRIMESTRES.map(t=>
+    `<button data-t="${t.id}" class="${ENSOUI.tri===t.id?'on':''}">${esc(t.nome)}</button>`).join('')}</span>`;
+}
+function badgeConf(c){return `<span class="cls cls-${c}" title="Classe de confiança ${c}">${c}</span>`}
+function barraFaixa(p25,p50,p75,max,cor){
+  const x=v=>clamp(v/max*100,0,100);
+  return `<div style="position:relative;height:16px;background:var(--panel);border:1px solid var(--line);border-radius:3px">
+    <div style="position:absolute;left:${x(p25)}%;width:${Math.max(1,x(p75)-x(p25))}%;top:3px;bottom:3px;
+      background:${cor};opacity:.32;border-radius:2px"></div>
+    <div style="position:absolute;left:${x(p50)}%;top:1px;bottom:1px;width:2px;background:${cor}"></div>
+  </div>`;
+}
+
 SCREENS.M8=[
-{id:'M8-01',nome:'Painel ENSO',badge:['La Niña','info'],
- obj:'Fase, probabilidade, consenso entre fontes, intensidade e janela de validade. O ENSO altera probabilidades — não determina eventos.',
- actions:[{t:'Executar A15',fn:()=>AGENTS.start('A15')},{t:'Comparar fontes',fn:()=>APP.go('M8-05')}],
+{id:'M8-01',nome:'Painel ENSO',badge:['El Niño','critico'],
+ obj:'Fase observada, intensidade, consenso entre fontes e janela de validade. O ENSO altera probabilidades — não determina eventos isolados.',
+ actions:[{t:'Executar A15',fn:()=>AGENTS.start('A15')},{t:'Ver custo projetado',k:'btn-p',fn:()=>APP.go('M8-05')}],
  render(){
-  return `<div class="sticky-note" style="margin-bottom:10px">
-    <b>Leitura obrigatória.</b> El Niño e La Niña alteram <b>probabilidades</b>. Não determinam isoladamente cada seca,
-    inundação ou tempestade. Nenhuma saída deste módulo pode apresentar o ENSO como causa determinística de um evento específico.
+  const t=trimestre(ENSOUI.tri);
+  return `<div class="sticky-note" style="border-color:var(--critico);margin-bottom:10px">
+    <b>El Niño Advisory em vigor desde ${esc(ENSO.alertaDesde)}.</b> As condições são <b>observadas</b>, não previstas.
+    Este módulo trabalha com probabilidades: nenhuma saída pode apresentar o ENSO como causa determinística de um evento específico.
   </div>
   ${kpiRow([
-    {label:'Fase atual',value:ENSO.fase,sev:'info',plain:true,mark:60,desc:ENSO.intensidade},
-    {label:'Anomalia Niño 3.4',value:fmt(ENSO.nino34,2),unit:'°C',sev:'info',plain:true,mark:45,
-     trend:'▼ consolidando',trendDir:'down'},
-    {label:'Probabilidade de consenso',value:ENSO.consenso.lanina,unit:'%',sev:'atencao',mark:ENSO.consenso.lanina,
-     desc:'4 fontes institucionais'},
-    {label:'Concordância entre modelos',value:fmt(ENSO.consenso.concordancia,2),sev:'normal',plain:true,mark:86},
-    {label:'Janela',value:'SON–JFM',sev:'info',plain:true,mark:50,desc:ENSO.janela}
+    {label:'Fase observada',value:ENSO.fase,sev:'critico',plain:true,mark:88,desc:ENSO.intensidade},
+    {label:'Niño 3.4 semanal',value:'+'+fmt(ENSO.nino34,1),unit:'°C',sev:'critico',mark:90,
+     trend:'▲ aquecendo',trendDir:'up',desc:ENSO.nino34Data},
+    {label:'ONI '+ENSO.oniJanela,value:'+'+fmt(ENSO.oni,2),unit:'°C',sev:'alerta',mark:70,desc:'limiar de El Niño: +0,50'},
+    {label:'Consenso das fontes',value:ENSO.consenso.elnino,unit:'%',sev:'critico',mark:ENSO.consenso.elnino,
+     desc:'4 instituições · concordância '+fmt(ENSO.consenso.concordancia,2)},
+    {label:'Evento muito forte',value:'>90',unit:'%',sev:'critico',mark:90,desc:'verão 2026-27'}
   ])}
   <div class="grid gA">
-    ${UI.card('Evolução do índice Niño 3.4 e projeção probabilística',CH.lines({h:250,x0:-12,x1:9,y0:-2.4,y1:2.4,yd:1,
-      xt:[{v:-12,l:'−12 m'},{v:-6,l:'−6 m'},{v:0,l:'agora'},{v:6,l:'+6 m'},{v:9,l:'+9 m'}],now:0,
+    ${UI.card('Evolução do índice Niño 3.4 e projeção',CH.lines({h:250,x0:-14,x1:8,y0:-2.4,y1:3.2,yd:1,
+      xt:[{v:-14,l:'−14 m'},{v:-7,l:'−7 m'},{v:0,l:'agora'},{v:4,l:'+4 m'},{v:8,l:'+8 m'}],now:0,
       series:[
-        {c:'#19D3E8',w:2,pts:Array.from({length:13},(_,i)=>[i-12,Math.sin((i-12)/4.2)*0.7-i*0.055])},
-        {c:'rgba(157,123,255,.55)',pts:Array.from({length:10},(_,i)=>[i,-0.94-i*0.055+Math.sin(i/2)*0.12])},
-        {c:'rgba(157,123,255,.3)',pts:Array.from({length:10},(_,i)=>[i,-0.94-i*0.16-0.35])},
-        {c:'rgba(157,123,255,.3)',pts:Array.from({length:10},(_,i)=>[i,-0.94+i*0.05+0.42])},
-        {c:'#FF8534',dash:true,pts:[[-12,-0.5],[9,-0.5]]},
-        {c:'#FF4A5F',dash:true,pts:[[-12,0.5],[9,0.5]]}
-      ]}),{sub:'ciano: observado · roxo: plume de projeção · linhas tracejadas: limiares ±0,5 °C',
-        foot:srcOf('NOAA/CPC, INPE/CPTEC, IRI e BoM (mock)','agosto/2026','B')})}
+        {c:'#19D3E8',w:2.2,pts:[[-14,-0.9],[-12,-0.7],[-10,-0.5],[-8,-0.2],[-6,0.1],[-4,0.5],[-2,1.1],[-1,1.8],[0,2.7]]},
+        {c:'rgba(157,123,255,.75)',pts:[[0,2.7],[1,2.8],[2,2.9],[3,2.7],[4,2.4],[5,1.9],[6,1.4],[7,0.9],[8,0.5]]},
+        {c:'rgba(157,123,255,.32)',pts:[[0,2.7],[2,3.2],[4,3.0],[6,2.1],[8,1.2]]},
+        {c:'rgba(157,123,255,.32)',pts:[[0,2.7],[2,2.5],[4,1.8],[6,0.9],[8,0.0]]},
+        {c:'#FF4A5F',dash:true,pts:[[-14,0.5],[8,0.5]]},
+        {c:'#35B8F0',dash:true,pts:[[-14,-0.5],[8,-0.5]]}
+      ]}),
+      {sub:'ciano: observado · roxo: plume de projeção com faixa · tracejado: limiares ±0,5 °C',
+       right:UI.badge(ENSO.alerta,'critico'),
+       foot:srcOf('NOAA/CPC, IRI, INPE/CPTEC e BoM · consulta 24/08/2026',ENSO.nino34Data,'A')})}
     <div class="flexc">
-      ${UI.card('Consenso multi-institucional',`
+      ${UI.card('Consenso entre instituições',`
         ${ENSO.fontes.map(f=>`<div style="margin-bottom:9px">
           <div class="flexr tiny mb6"><b>${esc(f.org)}</b>
             <span class="faint mono" style="margin-left:auto">${esc(f.atual)}</span></div>
           <div style="display:flex;height:14px;border-radius:2px;overflow:hidden;border:1px solid var(--line)">
-            <div style="width:${f.prob.lanina}%;background:rgba(53,184,240,.75)" title="La Niña ${f.prob.lanina}%"></div>
+            <div style="width:${f.prob.elnino}%;background:rgba(255,74,95,.8)" title="El Niño ${f.prob.elnino}%"></div>
             <div style="width:${f.prob.neutro}%;background:rgba(85,112,126,.75)" title="Neutro ${f.prob.neutro}%"></div>
-            <div style="width:${f.prob.elnino}%;background:rgba(255,133,52,.75)" title="El Niño ${f.prob.elnino}%"></div>
           </div>
-          <div class="tiny faint" style="margin-top:2px">La Niña ${f.prob.lanina}% · neutro ${f.prob.neutro}% · El Niño ${f.prob.elnino}% · ${esc(f.ver)}</div>
+          <div class="tiny faint" style="margin-top:2px">El Niño ${f.prob.elnino}% · neutro ${f.prob.neutro}% · ${esc(f.ver)}</div>
         </div>`).join('')}
         <hr class="hr">
         <div class="flexr"><b>Consenso adotado</b>
-          <span class="mono" style="margin-left:auto">La Niña ${ENSO.consenso.lanina}% · neutro ${ENSO.consenso.neutro}% · El Niño ${ENSO.consenso.elnino}%</span></div>`,
-        {sub:'mínimo de duas fontes exigido',foot:srcOf('A15 · consensus card',null,'B')})}
-      ${UI.card('Estado do oceano e da atmosfera',tinyTable([
-        ['TSM Pacífico central','−0,94 °C '+UI.badge('abaixo da média','info')],
-        ['Conteúdo de calor oceânico','−0,7 °C na camada de 300 m'],
-        ['Ventos alísios','intensificados em 4 m/s sobre o Pacífico oeste'],
-        ['Índice de Oscilação Sul','+0,9 '+UI.badge('acoplado','normal')],
-        ['Circulação de Walker','deslocada para oeste'],
-        ['Probabilidade de persistência até JFM','61%'],
-        ['Probabilidade de dissipação até MAM','78%']
-      ]),{tight:true,foot:srcOf('NOAA/CPC (mock)',null,'B')})}
-    </div></div>`;
+          <span class="mono" style="margin-left:auto">El Niño ${ENSO.consenso.elnino}% · neutro ${ENSO.consenso.neutro}%</span></div>
+        <div class="tiny faint mt6">Regra do módulo: mínimo de duas fontes institucionais para adotar um consenso.</div>`,
+        {sub:'quatro fontes',foot:srcOf('A15 · consensus card',null,'A')})}
+      ${UI.card('Probabilidade por trimestre',UI.table({key:'tri8',noTools:true,rows:TRIMESTRES,
+        onSelect:t=>{ENSOUI.tri=t.id},
+        cols:[
+          {k:'nome',t:'Trimestre'},
+          {k:'prob',t:'El Niño',cls:'n',get:r=>`<div style="width:70px">${UI.prog(r.prob,'var(--critico)')}</div>`},
+          {k:'oni',t:'ONI proj.',cls:'n',get:r=>'+'+fmt(r.oni,1)},
+          {k:'conc',t:'Concordância',cls:'n',get:r=>fmt(r.conc,2)},
+          {k:'lead',t:'Prazo',cls:'n',get:r=>r.lead+' tri'}
+        ]}),{tight:true,foot:srcOf('CPC · plume multi-modelo',null,'A')})}
+    </div>
+  </div>
+  <div class="mt10">${UI.card('Cronologia do evento',`<div class="trace">
+    ${ENSO.marcos.map(m=>`<div class="tstep ${m[2]==='critico'?'gate':'done'}">
+      <div class="st"><span class="nm">${esc(m[0])}</span>${UI.badge(m[2],m[2])}</div>
+      <div class="sd">${esc(m[1])}</div></div>`).join('')}
+  </div>`,{right:`<span class="tiny faint">próxima atualização: ${esc(ENSO.proxAtualizacao)}</span>`,
+    foot:srcOf(ENSO.fonteNota,null,'A')})}</div>`;
  }},
 
-{id:'M8-02',nome:'Mapa de teleconexões',
- obj:'Anomalias esperadas por região e estação do ano, com defasagem e confiança regional explícitas.',
- actions:[{t:'Filtrar por fase',fn:()=>UI.toast('Filtro aplicado','Exibindo apenas a fase La Niña para o trimestre SON.','ok')}],
+{id:'M8-02',nome:'Sinal regional',
+ obj:'Anomalia esperada por região hidrográfica, com o grau de risco e a aderência histórica do sinal. Onde o sinal é fraco, isso é declarado.',
+ actions:[{t:'Propagar aos modelos',k:'btn-p',fn:()=>{UI.toast('Cenário propagado','Anomalias enviadas ao M4 como forçante sazonal.','ok');APP.go('M4-01')}}],
  render(){
-  return `<div class="grid gA">
-    ${UI.card('Anomalia de precipitação esperada — La Niña · SON',`<div style="height:300px">${mapBlock({center:[-52,-15],zoom:4,
-      layers:['LY-HYDRO','LY-SNIRH','LY-BAC','LY-ESTA'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
-      foot:srcOf('teleconexões estatísticas 1950–2025 (mock)',null,'C')})}
-    ${UI.card('Teleconexões por região',UI.table({key:'tele',noTools:true,maxh:300,rows:ENSO.teleconexoes,
+  const cheia=ENSO_SINAL.filter(s=>s.risco==='cheia'&&s.grau!=='baixo').length;
+  const seca=ENSO_SINAL.filter(s=>s.risco==='seca'&&s.grau!=='baixo').length;
+  return `${kpiRow([
+    {label:'RH com risco de cheia',value:cheia,sev:'alerta',mark:cheia*14,desc:'Sul e Paraná'},
+    {label:'RH com risco de seca',value:seca,sev:'critico',mark:seca*14,desc:'Norte, Nordeste e São Francisco'},
+    {label:'Maior anomalia positiva',value:'+38',unit:'%',sev:'alerta',mark:76,desc:'região hidrográfica do Uruguai'},
+    {label:'Maior anomalia negativa',value:'−29',unit:'%',sev:'critico',mark:72,desc:'região hidrográfica Amazônica'},
+    {label:'Anomalia de temperatura',value:'+1,0',unit:'°C',sev:'alerta',mark:60,desc:'média nacional projetada'}
+  ])}
+  <div class="grid gA">
+    ${UI.card('Assinatura territorial do El Niño',`<div style="height:320px">${mapBlock({center:[-52,-15],zoom:4,
+      layers:['LY-HYDRO','LY-SNIRH','LY-MUN'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
+      foot:srcOf('teleconexões estatísticas 1950–2025 sobre a divisão hidrográfica ANA',null,'C')})}
+    ${UI.card('Sinal por região hidrográfica',UI.table({key:'sinal8',rows:ENSO_SINAL,noTools:true,maxh:320,
       cols:[
-        {k:'reg',t:'Região',cls:'wrap'},{k:'var',t:'Variável'},
-        {k:'sinal',t:'Sinal',get:r=>UI.badge(r.sinal,r.sinal==='negativo'?'alerta':r.sinal==='positivo'?'info':'semdados')},
-        {k:'mag',t:'Magnitude',cls:'n',get:r=>`<span class="${r.mag<0?'up':'down'}">${r.mag>0?'+':''}${fmt(r.mag,r.var==='Temperatura'?1:0)}${r.var==='Temperatura'?' °C':'%'}</span>`},
-        {k:'lag',t:'Defasagem'},
-        {k:'conf',t:'Confiança',get:r=>UI.clsBadge(r.conf)}
+        {k:'nome',t:'Região',cls:'wrap'},
+        {k:'chuva',t:'Chuva',cls:'n',get:r=>`<span class="${r.chuva<0?'up':'down'}">${r.chuva>0?'+':''}${r.chuva}%</span>`},
+        {k:'temp',t:'Temp.',cls:'n',get:r=>'+'+fmt(r.temp,1)+' °C'},
+        {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='seca'?'critico':'alerta')},
+        {k:'grau',t:'Grau',get:r=>UI.badge(r.grau,r.grau==='alto'?'critico':r.grau==='médio'?'atencao':'semdados')},
+        {k:'skill',t:'Aderência',cls:'n',get:r=>`<div style="width:60px">${UI.prog(r.skill*100,r.skill<0.6?'var(--alerta)':'var(--normal)')}</div>`},
+        {k:'conf',t:'Conf.',get:r=>badgeConf(r.conf)}
       ]}),{tight:true,foot:srcOf('A15 · sinal histórico versus previsão atual',null,'C')})}
   </div>
   <div class="grid g2 mt10">
-    ${UI.card('Anomalia por trimestre e região',CH.heat({lw:150,cw:34,ch:19,
-      cols:['SON','OND','NDJ','DJF','JFM'],
-      rows:[
-        {l:'Sul do Brasil',v:[-24,-28,-26,-19,-12]},
-        {l:'Sudeste',v:[-4,-2,3,5,2]},
-        {l:'Centro-Oeste',v:[3,4,2,-1,-3]},
-        {l:'Nordeste semiárido',v:[6,9,11,13,11]},
-        {l:'Norte da Amazônia',v:[14,18,17,12,8]},
-        {l:'Sul da Amazônia',v:[2,-1,-4,-6,-5]}
-      ],
-      color:v=>v<0?`rgba(255,133,52,${clamp(Math.abs(v)/30,.08,.85).toFixed(2)})`:`rgba(53,184,240,${clamp(v/20,.08,.85).toFixed(2)})`}),
-      {sub:'azul: chuva acima da média · laranja: abaixo · valores em %',
-       foot:srcOf('A15 · teleconexões probabilísticas',null,'C')})}
-    ${UI.card('Onde o sinal é fraco ou incerto',`<div class="doc" style="font-size:11.5px">
+    ${UI.card('Anomalia de chuva por trimestre',CH.heat({lw:154,cw:34,ch:19,
+      cols:TRIMESTRES.map(t=>t.id.slice(0,3)),
+      rows:ENSO_SINAL.slice(0,7).map(s=>({l:s.nome,
+        v:TRIMESTRES.map(t=>s.chuva*t.sev*(0.85+0.3*rand()))})),
+      color:v=>v<0?`rgba(255,133,52,${clamp(Math.abs(v)/34,.08,.88).toFixed(2)})`
+                  :`rgba(53,184,240,${clamp(v/34,.08,.88).toFixed(2)})`}),
+      {sub:'azul: acima da média · laranja: abaixo · valores em %',
+       foot:srcOf('A15 · projeção sazonal por trimestre',null,'C')})}
+    ${UI.card('Onde o sinal não serve como gatilho',`<div class="doc" style="font-size:11.5px">
       <p>Declarar onde o ENSO <b>não</b> ajuda é tão importante quanto declarar onde ajuda.</p>
-      <h4>Sinal fraco ou inconsistente</h4>
-      <ul>
-        <li><b>Centro-Oeste</b> — a amostra histórica não mostra resposta consistente entre eventos de mesma intensidade.</li>
-        <li><b>Sudeste</b> — alta variabilidade interna e influência dominante da Zona de Convergência do Atlântico Sul.</li>
-        <li><b>Nordeste semiárido</b> — o Atlântico Tropical frequentemente domina o sinal do Pacífico.</li>
-      </ul>
-      <h4>Consequência operacional</h4>
-      <p>Nessas regiões o planejamento não deve ser ancorado na perspectiva ENSO. A recomendação é manter os gatilhos
-      baseados em monitoramento observado, e não em antecipação climática.</p>
-      ${limitNote('Confiança D nas regiões de sinal fraco. Usar apenas para triagem, jamais para gatilho automático.')}
-    </div>`,{foot:srcOf('A15 · limitações declaradas',null,'D')})}
+      ${ENSO_SINAL.filter(s=>s.conf==='D').map(s=>`<div class="limit" style="margin-bottom:6px">
+        <b>${esc(s.nome)}</b> — aderência ${fmt(s.skill,2)}.<br><span class="tiny">${esc(s.nota)}</span></div>`).join('')}
+      <p class="cite">Nessas regiões o planejamento deve permanecer ancorado no monitoramento observado, e não na
+      antecipação climática. O gatilho automático fica desabilitado por política.</p></div>`,
+      {foot:srcOf('A15 · limitações declaradas',null,'D')})}
   </div>`;
  }},
 
-{id:'M8-03',nome:'Impacto por bacia',
- obj:'Da perspectiva climática à consequência hídrica: chuva, vazão, solo, risco de seca e cheia e afluência aos reservatórios.',
- actions:[{t:'Propagar aos modelos',k:'btn-p',fn:()=>{UI.toast('Cenário propagado','Cenários de chuva e vazão enviados ao M4 e ao M10.','ok');APP.go('M4-01')}}],
+{id:'M8-03',nome:'Impacto hidrológico',
+ obj:'Da anomalia climática à consequência hídrica: vazão, armazenamento e balanço entre disponibilidade e demanda outorgada.',
+ actions:[{t:'Executar A08',fn:()=>AGENTS.start('A08')},{t:'Abrir reservatórios',fn:()=>APP.go('M10-01')}],
  render(){
-  return `${UI.card('Tradução hidrológica por bacia — cenário La Niña moderada',UI.table({key:'ensobac',rows:BACIAS.map(b=>({
-    bacia:b.nome,rh:(REGIOES.find(r=>r.id===b.rh)||{}).sig,
-    chuva:(b.rh==='RH-URU'||b.rh==='RH-ATS')?-22:(b.rh==='RH-AMZ'?12:(b.rh==='RH-ANE'?9:2)),
-    solo:(b.rh==='RH-URU'||b.rh==='RH-ATS')?-18:(b.rh==='RH-AMZ'?8:1),
-    vazao:(b.rh==='RH-URU'||b.rh==='RH-ATS')?-31:(b.rh==='RH-AMZ'?15:(b.rh==='RH-ANE'?7:-2)),
-    seca:(b.rh==='RH-URU'||b.rh==='RH-ATS')?'alto':(b.rh==='RH-PGY'?'alto':'médio'),
-    cheia:(b.rh==='RH-AMZ')?'médio':'baixo',
-    conf:(b.rh==='RH-URU'||b.rh==='RH-ATS')?'B':(b.rh==='RH-PRN'?'D':'C'),
-    dur:'3–5 meses'
-  })),src:'A15 + M4',
+  const t=trimestre(ENSOUI.tri);
+  const linhas=BACIAS.map(b=>{
+    const sg=ENSO_SINAL.find(s=>s.rh===b.rh)||ENSO_SINAL[0];
+    const vaz=Math.round(sg.chuva*1.35*t.sev);
+    return {bacia:b.nome,rh:(REGIOES.find(r=>r.id===b.rh)||{}).sig,chuva:Math.round(sg.chuva*t.sev),
+      solo:Math.round(sg.chuva*0.7*t.sev),vazao:vaz,
+      arm:Math.round(sg.chuva*0.9*t.sev),
+      risco:sg.risco,grau:sg.grau,conf:sg.conf,
+      bal:vaz<0?Math.round(vaz*0.8):Math.round(vaz*0.3)};
+  });
+  return `<div class="flexr mb6"><span class="eyebrow">Trimestre de referência</span>${selTri()}
+    <span class="tiny faint" style="margin-left:auto">severidade relativa ${fmt(t.sev*100,0)}% · concordância ${fmt(t.conc,2)}</span></div>
+  ${UI.card('Tradução hidrológica por bacia — '+esc(t.nome),UI.table({key:'hid8',rows:linhas,src:'A15 + M4',
     cols:[
       {k:'bacia',t:'Bacia',cls:'wrap'},{k:'rh',t:'RH'},
       {k:'chuva',t:'Anom. chuva',cls:'n',get:r=>`<span class="${r.chuva<0?'up':'down'}">${r.chuva>0?'+':''}${r.chuva}%</span>`},
       {k:'solo',t:'Umidade do solo',cls:'n',get:r=>`<span class="${r.solo<0?'up':'down'}">${r.solo>0?'+':''}${r.solo}%</span>`},
       {k:'vazao',t:'Anom. vazão',cls:'n',get:r=>`<span class="${r.vazao<0?'up':'down'}">${r.vazao>0?'+':''}${r.vazao}%</span>`},
-      {k:'seca',t:'Risco de seca',get:r=>UI.badge(r.seca,r.seca==='alto'?'alerta':'atencao')},
-      {k:'cheia',t:'Risco de cheia',get:r=>UI.badge(r.cheia,r.cheia==='médio'?'atencao':'normal')},
-      {k:'dur',t:'Duração estimada'},
-      {k:'conf',t:'Confiança',get:r=>UI.clsBadge(r.conf)}
-    ]}),{tight:true,foot:srcOf('M8 · cascata clima → chuva → vazão → impacto',null,'C')})}
+      {k:'arm',t:'Armazenamento',cls:'n',get:r=>`<span class="${r.arm<0?'up':'down'}">${r.arm>0?'+':''}${r.arm}%</span>`},
+      {k:'bal',t:'Folga vs outorga',cls:'n',get:r=>`<span class="${r.bal<0?'up':'down'}">${r.bal>0?'+':''}${r.bal}%</span>`},
+      {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='seca'?'critico':'alerta')},
+      {k:'conf',t:'Conf.',get:r=>badgeConf(r.conf)}
+    ]}),{tight:true,foot:srcOf('cascata clima → chuva → vazão → balanço hídrico',null,'C')})}
   <div class="grid g3 mt10">
-    ${UI.card('Afluência prevista aos reservatórios',CH.bars({h:180,values:true,vd:0,
-      data:RESERVATORIOS.slice(0,7).map(r=>({l:r.nome.slice(0,9),v:Math.round(r.aflu*(r.uf==='RS'?0.72:1.05)),
-        c:r.uf==='RS'?'#FF8534':'#35B8F0'}))}),
-      {sub:'m³/s no trimestre · laranja: bacias com anomalia negativa',
-       foot:srcOf('M8/M10 · propagação de cenário',null,'C')})}
-    ${UI.card('Risco de recorde',`${tinyTable([
-      ['Vazão mínima recorde — Uruguai','probabilidade 18%'],
-      ['Volume útil mínimo — Passo Real','probabilidade 9%'],
-      ['Estiagem superior a 90 dias no Sul','probabilidade 34%'],
-      ['Cheia recorde na Amazônia','probabilidade 7%'],
-      ['Vazante recorde no Madeira','probabilidade 22%']
-    ])}${limitNote('Probabilidades de recorde derivam de análogos históricos com amostra pequena. Confiança D.')}`,
+    ${UI.card('Afluência projetada aos reservatórios',CH.bars({h:180,values:true,vd:0,
+      data:RESERVATORIOS.slice(0,7).map(r=>{
+        const sul=['RS','PR','SC'].includes(r.uf);
+        return {l:r.nome.slice(0,9),v:Math.round(r.aflu*(sul?1+0.28*t.sev:1-0.22*t.sev)),
+          c:sul?'#35B8F0':'#FF8534'}})}),
+      {sub:'m³/s · azul: bacias com excesso · laranja: com déficit',
+       foot:srcOf('M8/M10 · propagação do cenário',null,'C')})}
+    ${UI.card('Probabilidade de recorde',`${tinyTable([
+      ['Vazante recorde no Madeira','probabilidade 47%'],
+      ['Volume mínimo em Sobradinho','probabilidade 31%'],
+      ['Cheia recorde no Uruguai','probabilidade 26%'],
+      ['Estiagem acima de 120 dias no NE','probabilidade 58%'],
+      ['Restrição de calado por mais de 90 dias','probabilidade 62%']
+    ])}${limitNote('Probabilidades derivadas de quatro análogos históricos. Amostra pequena implica confiança D.')}`,
       {foot:srcOf('A15 · analog search',null,'D')})}
     ${UI.card('Setores expostos',CH.hbars({data:[
-      {l:'Geração hidrelétrica',v:88,c:'#FF4A5F'},{l:'Irrigação',v:76,c:'#FF8534'},
-      {l:'Abastecimento urbano',v:64,c:'#FF8534'},{l:'Navegação',v:58,c:'#E8A317'},
-      {l:'Ecossistemas',v:52,c:'#E8A317'},{l:'Indústria',v:41,c:'#35B8F0'},
-      {l:'Saneamento',v:36,c:'#35B8F0'},{l:'Mineração',v:24,c:'#55707F'}],lw:140,vw:34}),
+      {l:'Geração hidrelétrica',v:92,c:'#FF4A5F'},{l:'Navegação fluvial',v:88,c:'#FF4A5F'},
+      {l:'Irrigação',v:81,c:'#FF8534'},{l:'Abastecimento urbano',v:74,c:'#FF8534'},
+      {l:'Agropecuária',v:69,c:'#FF8534'},{l:'Ecossistemas aquáticos',v:63,c:'#E8A317'},
+      {l:'Indústria',v:48,c:'#35B8F0'},{l:'Saneamento',v:41,c:'#35B8F0'}],lw:150,vw:30}),
       {sub:'índice de exposição relativa',foot:srcOf('M11 · exposição setorial',null,'C')})}
   </div>`;
  }},
 
-{id:'M8-04',nome:'Plano de preparação',
- obj:'Gatilhos graduais, ações, responsáveis, prazos e evidências. Toda ação exige responsável e gatilho declarados.',
- actions:[{t:'Aprovar plano',k:'btn-g',fn:()=>UI.toast('Plano aprovado','Registrado com aprovador, vigência e gatilhos.','ok')},
-   {t:'Ativar estágio',fn:()=>UI.toast('Estágio ativado','Estágio de Atenção ativado. Órgãos parceiros notificados em modo simulado.','warn')}],
+{id:'M8-04',nome:'Cadeias e gargalos',badge:['14','alerta'],
+ obj:'Onde a anomalia vira restrição concreta: captação, outorga, irrigação, uso industrial e logística, por cadeia e por região.',
+ actions:[{t:'Executar A12',fn:()=>AGENTS.start('A12')},
+   {t:'Abrir dossiê territorial',fn:()=>APP.go('M11-05')}],
+ render(){
+  setTimeout(()=>{$$('#segGar button').forEach(b=>b.onclick=()=>{ENSOUI.gargalo=b.dataset.g;APP.rerender()})},0);
+  const filtro=ENSOUI.gargalo;
+  const rows=CADEIAS_ENSO.filter(c=>filtro==='todos'||c.gargalo===filtro);
+  const deficit=CADEIAS_ENSO.filter(c=>c.folga<0);
+  return `<div class="flexr mb6">
+    <span class="eyebrow">Tipo de gargalo</span>
+    <span class="seg" id="segGar">
+      <button data-g="todos" class="${filtro==='todos'?'on':''}">Todos</button>
+      ${GARGALOS.map(g=>`<button data-g="${g[0]}" class="${filtro===g[0]?'on':''}">${esc(g[0])}</button>`).join('')}
+    </span>
+    <span class="tiny faint" style="margin-left:auto">${rows.length} de ${CADEIAS_ENSO.length} cadeias</span>
+  </div>
+  ${kpiRow([
+    {label:'Cadeias em déficit',value:deficit.length,unit:'de '+CADEIAS_ENSO.length,sev:'critico',mark:deficit.length/CADEIAS_ENSO.length*100},
+    {label:'Pior folga hídrica',value:'−47',unit:'%',sev:'critico',mark:82,desc:'perímetros do Jaguaribe'},
+    {label:'População dependente',value:fmt0(CADEIAS_ENSO.reduce((s,c)=>s+c.pop,0)/1e6),unit:'mi',sev:'alerta',plain:true,mark:70},
+    {label:'Gargalo mais frequente',value:'captação',sev:'critico',plain:true,mark:60,
+     desc:CADEIAS_ENSO.filter(c=>c.gargalo==='captação').length+' cadeias'},
+    {label:'Setores envolvidos',value:[...new Set(CADEIAS_ENSO.map(c=>c.setor))].length,sev:'info',plain:true,mark:55}
+  ])}
+  ${UI.card('Cadeias produtivas e usos com restrição projetada',UI.table({key:'cad8',entity:'cadeia',rows:rows,src:'M8 · cruzamento ENSO × CHT × outorgas',
+    cols:[
+      {k:'id',t:'ID',get:r=>`<span class="mono">${r.id}</span>`},
+      {k:'nome',t:'Cadeia ou uso',cls:'wrap'},
+      {k:'setor',t:'Setor'},
+      {k:'gargalo',t:'Gargalo',get:r=>UI.badge(r.gargalo,r.gargalo==='captação'||r.gargalo==='outorga'?'critico':r.gargalo==='logística'?'atencao':'alerta')},
+      {k:'uf',t:'UF'},
+      {k:'risco',t:'Natureza',get:r=>UI.badge(r.risco,r.risco==='seca'?'critico':'alerta')},
+      {k:'demanda',t:'Demanda m³/s',cls:'n',get:r=>r.demanda?fmt0(r.demanda):'—'},
+      {k:'disp',t:'Disponível m³/s',cls:'n',get:r=>r.disp?fmt0(r.disp):'—'},
+      {k:'folga',t:'Folga',cls:'n',get:r=>`<span class="${r.folga<0?'up':'down'}">${r.folga>0?'+':''}${r.folga}%</span>`},
+      {k:'pop',t:'População',cls:'n',get:r=>r.pop?fmt0(r.pop):'—'},
+      {k:'nota',t:'Observação',cls:'wrap'}
+    ]}),{tight:true,foot:srcOf('M8 · gargalo é restrição projetada, não constatação de campo',null,'C')})}
+  <div class="grid g2 mt10">
+    ${UI.card('Tipos de gargalo',`
+      ${GARGALOS.map(g=>{const n=CADEIAS_ENSO.filter(c=>c.gargalo===g[0]).length;
+        return `<div style="padding:7px 0;border-bottom:1px solid var(--line)">
+          <div class="flexr"><b style="font-size:12px">${esc(g[0])}</b>${UI.badge(n+' cadeias',g[2])}</div>
+          <div class="tiny dim" style="margin-top:3px">${esc(g[1])}</div></div>`}).join('')}
+      ${limitNote('O gargalo indica onde a restrição se materializa primeiro. A confirmação exige leitura de campo e verificação cadastral.')}`,
+      {foot:srcOf('M8 · taxonomia de gargalo hídrico',null,'B')})}
+    ${UI.card('Folga hídrica por cadeia',CH.hbars({data:CADEIAS_ENSO.slice().sort((a,b)=>a.folga-b.folga).map(c=>
+      ({l:c.nome.slice(0,30),v:Math.abs(c.folga),c:c.folga<0?'#FF4A5F':'#2FBF71',
+        t:(c.folga>0?'+':'')+c.folga+'%'})),lw:170,vw:44}),
+      {sub:'vermelho: demanda acima da disponibilidade projetada',
+       foot:srcOf('M8 · balanço por cadeia',null,'C')})}
+  </div>`;
+ }}
+];
+</script>
+<script>
+/* ---- continuação de SCREENS.M8 ---- */
+SCREENS.M8.push(
+{id:'M8-05',nome:'Custo projetado',badge:['5 dim','critico'],
+ obj:'Exposição projetada em cinco dimensões. A faixa estreita conforme as previsões convergem — a incerteza é exibida, não escondida.',
+ actions:[{t:'Executar A15',fn:()=>AGENTS.start('A15')},
+   {t:'Levar à decisão',k:'btn-p',fn:()=>{UI.toast('Encaminhado','Cenário de custo anexado à fila de decisão regulatória.','ok');APP.go('M13-01')}}],
+ render(){
+  setTimeout(()=>{$$('#dimSel button').forEach(b=>b.onclick=()=>{ENSOUI.dim=b.dataset.d;APP.rerender()})},0);
+  const t=trimestre(ENSOUI.tri);
+  const dims=projetarCusto(ENSOUI.tri);
+  const sel=dims.find(d=>d.id===ENSOUI.dim)||dims[0];
+  const maxComp=Math.max(...sel.comp.map(c=>c.p75));
+  return `
+  <div class="flexr mb6"><span class="eyebrow">Trimestre</span>${selTri()}
+    <span class="tiny faint" style="margin-left:auto">convergência média ${fmt(sel.conv*100,0)}% · classe ${sel.conf}</span></div>
+
+  <div class="grid g5" style="margin-bottom:10px">
+    ${dims.map(d=>`<button class="kpi" style="text-align:left;color:${sevColor(d.sev)};cursor:pointer;
+        ${d.id===ENSOUI.dim?'border-color:var(--hidro);box-shadow:inset 0 0 0 1px var(--hidro)':''}"
+        onclick="ENSOUI.dim='${d.id}';APP.rerender()">
+      <div class="rule"><i style="top:20%"></i><i style="top:45%"></i><i style="top:70%"></i>
+        <b style="top:${clamp(100-d.conv*100,4,94)}%"></b></div>
+      <div class="kl">${esc(d.nome)}</div>
+      <div class="kv" style="color:${sevColor(d.sev)};font-size:22px">${esc(fmtDim(d.p50,d.un))}</div>
+      <div class="kd"><span class="mono tiny">${esc(fmtDim(d.p25,d.un))} – ${esc(fmtDim(d.p75,d.un))}</span></div>
+      <div class="tiny faint mono" style="margin-top:3px">faixa ±${fmt(d.amplitude*50,0)}% · classe ${d.conf}</div>
+    </button>`).join('')}
+  </div>
+
+  <div class="grid gA">
+    ${UI.card('Composição — '+esc(sel.nome),
+      `<div class="tiny dim mb6">${esc(sel.desc)}</div>
+      ${sel.comp.map(c=>`<div style="margin-bottom:9px">
+        <div class="flexr tiny" style="margin-bottom:3px">
+          <span style="flex:1">${esc(c.nome)}</span>
+          <span class="mono" style="color:var(--ink)">${esc(fmtDim(c.p50,sel.un))}</span>
+          ${badgeConf(c.conf)}
+        </div>
+        ${barraFaixa(c.p25,c.p50,c.p75,maxComp,sevColor(sel.sev))}
+        <div class="flexr tiny faint" style="margin-top:2px">
+          <span class="mono">${esc(fmtDim(c.p25,sel.un))} – ${esc(fmtDim(c.p75,sel.un))}</span>
+          <span style="margin-left:auto">cadeias: ${c.cadeias.join(', ')}</span>
+        </div>
+      </div>`).join('')}
+      <hr class="hr">
+      <div class="flexr"><b>Total projetado</b>
+        <span class="num" style="margin-left:auto;font-size:20px;color:${sevColor(sel.sev)}">${esc(fmtDim(sel.p50,sel.un))}</span></div>
+      <div class="tiny faint mono" style="text-align:right">faixa ${esc(fmtDim(sel.p25,sel.un))} – ${esc(fmtDim(sel.p75,sel.un))}</div>`,
+      {sub:'a barra clara é a faixa P25–P75; a linha é a mediana',
+       right:`<span class="seg" id="dimSel">${DIMENSOES.map(d=>
+         `<button data-d="${d.id}" class="${ENSOUI.dim===d.id?'on':''}">${esc(d.nome)}</button>`).join('')}</span>`,
+       foot:srcOf('M8 · modelo de custo por convergência · '+esc(t.nome),null,sel.conf)})}
+    <div class="flexc">
+      ${UI.card('Como a faixa estreita',CH.lines({h:190,x0:1,x1:6,y0:0,y1:100,yd:0,
+        xt:TRIMESTRES.map(t2=>({v:t2.lead,l:t2.id.slice(0,3)})),
+        series:[
+          {c:'#19D3E8',dots:true,pts:TRIMESTRES.map(t2=>[t2.lead,convergencia(t2,0.72)*100])},
+          {c:'#FF8534',dots:true,pts:TRIMESTRES.map(t2=>{
+            const cv=convergencia(t2,0.72);return [t2.lead,(0.60-0.40*cv)*200]})}
+        ]}),
+        {sub:'ciano: convergência · laranja: amplitude da faixa',
+         foot:srcOf('convergência = 50% concordância + 30% prazo + 20% skill regional',null,'B')})}
+      ${UI.card('Leitura do número',`<div class="doc" style="font-size:11.5px">
+        <p>O valor central não é uma previsão de perda. É a <b>exposição projetada</b> caso o cenário do trimestre
+        se confirme na severidade indicada.</p>
+        <h4>O que muda com a convergência</h4>
+        <p>Em ${esc(t.nome)} a concordância entre fontes é de ${fmt(t.conc,2)} e o prazo é de ${t.lead} trimestre(s).
+        Isso produz uma faixa de ±${fmt(sel.amplitude*50,0)}% em torno da mediana e classe de confiança
+        <b>${sel.conf}</b>.</p>
+        <h4>Uso permitido</h4>
+        <ul><li>Dimensionar preparação, estoque regulador e capacidade de resposta.</li>
+        <li>Priorizar investimento e levantamento onde a exposição é maior.</li>
+        <li>Fundamentar recomendação regulatória com faixa declarada.</li></ul>
+        <h4>Uso não permitido</h4>
+        <ul><li>Anunciar valor único de prejuízo.</li>
+        <li>Justificar indenização, seguro ou compensação individual.</li>
+        <li>Substituir avaliação de perda pós-evento.</li></ul>
+      </div>`,{foot:srcOf('M16 · uso permitido visível',null,'A')})}
+    </div>
+  </div>
+
+  <div class="mt10">${UI.card('Exposição consolidada nas cinco dimensões',UI.table({key:'cust8',noTools:true,rows:dims,
+    onSelect:d=>{ENSOUI.dim=d.id},
+    cols:[
+      {k:'nome',t:'Dimensão',get:r=>`<b>${esc(r.nome)}</b>`},
+      {k:'desc',t:'O que mede',cls:'wrap'},
+      {k:'p25',t:'P25',cls:'n',get:r=>esc(fmtDim(r.p25,r.un))},
+      {k:'p50',t:'Mediana',cls:'n',get:r=>`<b>${esc(fmtDim(r.p50,r.un))}</b>`},
+      {k:'p75',t:'P75',cls:'n',get:r=>esc(fmtDim(r.p75,r.un))},
+      {k:'amplitude',t:'Amplitude',cls:'n',get:r=>`<div style="width:80px">${UI.prog(r.amplitude*100,r.amplitude>0.7?'var(--critico)':'var(--atencao)')}</div>`},
+      {k:'conv',t:'Convergência',cls:'n',get:r=>fmt(r.conv*100,0)+'%'},
+      {k:'conf',t:'Confiança',get:r=>badgeConf(r.conf)},
+      {k:'sev',t:'Severidade',get:r=>UI.badge(r.sev,r.sev)}
+    ]}),{tight:true,
+      foot:srcOf('valores simulados de forma determinística · seed '+SEED,null,'C')})}</div>
+
+  ${limitNote('Toda cifra desta tela é uma <b>estimativa de exposição</b> derivada de cenário climático probabilístico. Não é previsão de prejuízo, não constitui base de indenização e não substitui avaliação de perdas após o evento.')}`;
+ }},
+
+{id:'M8-08',nome:'Preparação e gatilhos',
+ obj:'Estágios graduais com gatilho objetivo, responsável nominal e prazo. Nenhuma ação entra sem gatilho declarado.',
+ actions:[{t:'Ativar estágio',fn:()=>{UI.toast('Estágio ativado','Estágio de Alerta ativado. Órgãos parceiros notificados em modo simulado.','warn');
+   BUS.emit('incident.level.changed',{},{text:'Estágio de preparação ENSO elevado para <b>Alerta</b>',sev:'alerta',mod:'M8'})}},
+   {t:'Aprovar plano',k:'btn-g',fn:()=>UI.toast('Plano aprovado','Registrado com aprovador, vigência e gatilhos.','ok')}],
  render(){
   const estagios=[
    {e:'Observação',resp:'Acompanhar modelos e validar dados',gat:'Probabilidade de fase ≥ 50%',st:'concluído',sev:'normal'},
-   {e:'Atenção',resp:'Reforçar a rede e informar órgãos parceiros',gat:'Probabilidade ≥ 65% por 2 rodadas',st:'ativo',sev:'atencao'},
-   {e:'Alerta',resp:'Atualizar contingências e iniciar simulações',gat:'Anomalia de vazão ≤ −20% em 3 bacias',st:'pendente',sev:'alerta'},
-   {e:'Preparação',resp:'Ativar salas e mobilizar setores expostos',gat:'Volume útil < 40% em sistema crítico',st:'pendente',sev:'alerta'},
-   {e:'Resposta',resp:'Executar medidas operacionais e regulatórias',gat:'Declaração de escassez ou evento crítico',st:'pendente',sev:'critico'},
-   {e:'Recuperação',resp:'Acompanhar impactos e revisar protocolos',gat:'Retorno à faixa normal por 30 dias',st:'pendente',sev:'info'}
+   {e:'Atenção',resp:'Reforçar a rede e informar órgãos parceiros',gat:'Advisory emitido e confirmado por 2 fontes',st:'concluído',sev:'atencao'},
+   {e:'Alerta',resp:'Atualizar contingências e rodar simulações por bacia',gat:'ONI projetado ≥ +1,5 °C em 2 trimestres',st:'ativo',sev:'alerta'},
+   {e:'Preparação',resp:'Ativar salas e mobilizar setores expostos',gat:'Folga hídrica negativa em 5 ou mais cadeias',st:'pendente',sev:'alerta'},
+   {e:'Resposta',resp:'Executar medidas operacionais e regulatórias',gat:'Declaração de escassez ou evento crítico aberto',st:'pendente',sev:'critico'},
+   {e:'Recuperação',resp:'Acompanhar impactos e revisar protocolos',gat:'ONI abaixo de +0,5 °C por 2 trimestres',st:'pendente',sev:'info'}
   ];
   return `<div class="grid gA">
     ${UI.card('Estágios e gatilhos',`<div class="trace">
@@ -5813,72 +6229,344 @@ SCREENS.M8=[
         <div class="sd">${esc(e.resp)}</div>
         <div class="tool"><span class="tn">▸ gatilho</span><span class="to">${esc(e.gat)}</span></div>
       </div>`).join('')}</div>`,
-      {sub:'protocolo gradual por mudança de estágio',foot:srcOf('M8 · playbook La Niña',null,'B')})}
+      {sub:'protocolo gradual por mudança de estágio',foot:srcOf('M8 · playbook El Niño 2026-27',null,'B')})}
     <div class="flexc">
-      ${UI.card('Nova ação de preparação',UI.form({key:'prep',submit:'Registrar ação',
+      ${UI.card('Nova ação de preparação',UI.form({key:'prep8',submit:'Registrar ação',
         note:'Toda ação exige responsável nominal, gatilho objetivo e prazo. Ações sem gatilho são rejeitadas.',
         groups:[{t:'Ação',rows:[['gat','terr'],['resp','prazo']],fields:[
-          {n:'gat',t:'Gatilho',req:true,val:'Volume útil de Passo Real abaixo de 40%'},
-          {n:'terr',t:'Território',type:'select',opts:BACIAS.map(b=>b.nome)},
-          {n:'resp',t:'Responsável',req:true,val:'Coordenação de reservatórios'},
+          {n:'gat',t:'Gatilho',req:true,val:'Folga hídrica abaixo de −30% em cadeia prioritária'},
+          {n:'terr',t:'Território',type:'select',opts:ENSO_SINAL.map(s=>s.nome)},
+          {n:'resp',t:'Responsável',req:true,val:'Coordenação de eventos críticos'},
           {n:'prazo',t:'Prazo',type:'select',opts:['imediato','24 h','7 dias','30 dias','trimestral']}
         ]},{t:'Detalhe',fields:[
+          {n:'dim',t:'Dimensão de impacto visada',type:'chips',
+           opts:DIMENSOES.map(d=>d.nome),on:['Humano','Infraestrutura']},
           {n:'acao',t:'Descrição da ação',type:'textarea',rows:3,req:true,
-           val:'Antecipar reunião de alocação com o comitê de bacia e apresentar cenários de deplecionamento gradual.'},
-          {n:'evid',t:'Evidência exigida',type:'chips',opts:['Ata de reunião','Boletim publicado','Ordem de serviço','Relatório técnico','Nenhuma'],on:['Ata de reunião']}
+           val:'Antecipar a reunião de alocação com o comitê de bacia e apresentar cenários de restrição gradual de captação.'}
         ]}],
-        onSubmit:()=>UI.toast('Ação registrada','Vinculada ao estágio ativo com responsável e prazo.','ok')}),{})}
+        onSubmit:()=>UI.toast('Ação registrada','Vinculada ao estágio ativo com responsável, gatilho e prazo.','ok')}),{})}
       ${UI.card('Ações em acompanhamento',`
-        ${[['Reforço da rede no Uruguai e Atlântico Sul','RHN','em execução','atencao'],
-           ['Informe aos órgãos gestores estaduais','Comunicação','concluída','normal'],
-           ['Revisão de contingência de abastecimento','CORSH','em execução','atencao'],
-           ['Simulação de deplecionamento gradual','Reservatórios','pendente','semdados'],
-           ['Articulação com defesa civil estadual','Operações','concluída','normal']].map(a=>
+        ${[['Reforço da rede telemétrica no Norte e Nordeste','RHN','em execução','atencao'],
+           ['Revisão de contingência de abastecimento em 8 sistemas','CORSH','em execução','atencao'],
+           ['Articulação com ONS sobre despacho térmico','SOE','concluída','normal'],
+           ['Simulação de restrição de calado no Madeira','Operações','pendente','semdados'],
+           ['Alocação negociada antecipada no Jaguaribe','COART','em execução','atencao'],
+           ['Informe aos comitês de bacia do Sul sobre risco de cheia','Comunicação','concluída','normal']].map(a=>
           `<div class="flexr" style="padding:5px 0;border-bottom:1px solid var(--line);font-size:11.5px">
             <span style="flex:1">${esc(a[0])}</span><span class="tiny faint">${esc(a[1])}</span>${UI.badge(a[2],a[3])}</div>`).join('')}`,
         {foot:srcOf('M8 · PreparednessAction',null,'A')})}
     </div></div>`;
  }},
 
-{id:'M8-05',nome:'Análogos históricos',
- obj:'Eventos semelhantes, grau de similaridade, desfechos e — sobretudo — as diferenças que limitam a analogia.',
- actions:[{t:'Selecionar análogo',fn:()=>UI.toast('Análogo selecionado','2020-21 marcado como referência com as diferenças documentadas.','ok')}],
+{id:'M8-09',nome:'Análogos históricos',
+ obj:'Eventos semelhantes, grau de similaridade, desfecho hídrico e — sobretudo — as diferenças que limitam a analogia.',
+ actions:[{t:'Selecionar análogo',fn:()=>UI.toast('Análogo selecionado','2015-16 marcado como referência, com as diferenças documentadas.','ok')}],
  render(){
   return `<div class="grid gA">
-    ${UI.card('Eventos análogos',UI.table({key:'anal',noTools:true,rows:ENSO.analogos,
+    ${UI.card('Eventos de El Niño forte comparáveis',UI.table({key:'anal8',noTools:true,rows:ANALOGOS_EN,
       cols:[
         {k:'ano',t:'Evento'},
-        {k:'sim',t:'Similaridade',cls:'n',get:r=>`<div style="width:90px">${UI.prog(r.sim*100,'var(--info)')}</div>`},
+        {k:'oni',t:'ONI máx',cls:'n',get:r=>'+'+fmt(r.oni,1)},
+        {k:'sim',t:'Similaridade',cls:'n',get:r=>`<div style="width:88px">${UI.prog(r.sim*100,'var(--info)')}</div>`},
         {k:'desfecho',t:'Desfecho hídrico',cls:'wrap'},
+        {k:'custo',t:'Custo estimado',cls:'wrap'},
         {k:'dif',t:'Diferença relevante',cls:'wrap'}
-      ]}),{tight:true,
-        right:UI.badge('diferenças obrigatórias','atencao'),
+      ]}),{tight:true,right:UI.badge('diferenças obrigatórias','atencao'),
         foot:srcOf('A15 · analog search com limites declarados',null,'C')})}
-    ${UI.card('Comparação de índices',CH.lines({h:250,x0:-6,x1:9,y0:-2.2,y1:1.2,yd:1,
+    ${UI.card('Trajetória do índice nos análogos',CH.lines({h:250,x0:-6,x1:9,y0:-0.5,y1:3.4,yd:1,
       xt:[{v:-6,l:'−6 m'},{v:0,l:'pico'},{v:9,l:'+9 m'}],
       series:[
-        {c:'#19D3E8',w:2,pts:Array.from({length:16},(_,i)=>[i-6,-0.94-Math.exp(-Math.pow((i-6)/5,2))*0.5])},
-        {c:'rgba(157,123,255,.6)',pts:Array.from({length:16},(_,i)=>[i-6,-1.32-Math.exp(-Math.pow((i-6)/4.4,2))*0.6])},
-        {c:'rgba(232,163,23,.6)',pts:Array.from({length:16},(_,i)=>[i-6,-1.58-Math.exp(-Math.pow((i-6)/4,2))*0.7])}
-      ]}),{sub:'ciano: evento atual · roxo: 2020-21 · âmbar: 2010-11',
-        foot:srcOf('série NOAA Niño 3.4 (mock)',null,'B')})}
+        {c:'#19D3E8',w:2.2,pts:Array.from({length:16},(_,i)=>[i-6,2.9*Math.exp(-Math.pow((i-6)/4.6,2))+0.2])},
+        {c:'rgba(157,123,255,.6)',pts:Array.from({length:16},(_,i)=>[i-6,2.6*Math.exp(-Math.pow((i-6)/4.2,2))+0.15])},
+        {c:'rgba(232,163,23,.6)',pts:Array.from({length:16},(_,i)=>[i-6,2.4*Math.exp(-Math.pow((i-6)/4.9,2))+0.1])}
+      ]}),{sub:'ciano: evento atual projetado · roxo: 2015-16 · âmbar: 1997-98',
+        foot:srcOf('série NOAA ONI',null,'B')})}
   </div>
   <div class="mt10">${UI.card('Por que a analogia tem limite',`<div class="doc">
-    <p>O evento análogo é uma ferramenta de contexto, não uma previsão. Três diferenças materiais separam o quadro atual
-    de 2020-21, o análogo mais próximo com similaridade de 0,88.</p>
-    <p><b>Estado do Atlântico Tropical.</b> Em 2020 o Atlântico Sul estava anomalamente frio, o que reforçou o sinal de
-    redução de chuva no Sul. Hoje o Atlântico está próximo da média, e essa diferença sozinha pode reduzir pela metade
-    a magnitude da anomalia esperada.</p>
-    <p><b>Condição antecedente das bacias.</b> Em 2020 o Sul entrou no evento com solos já secos após uma primavera abaixo
-    da média. O quadro atual é oposto: o sistema Guaíba responde a uma cheia, com solos saturados e reservatórios cheios.
-    A mesma anomalia climática produz respostas hidrológicas diferentes conforme o estado inicial.</p>
-    <p><b>Infraestrutura e operação.</b> As regras de operação da cascata do Jacuí e o parque de reservatórios do São
-    Francisco mudaram entre os dois períodos, o que altera a tradução de anomalia climática em consequência operacional.</p>
-    <p class="cite">Conclusão de uso: o análogo orienta a preparação e a comunicação, mas não substitui a previsão
+    <p>O análogo é ferramenta de contexto, não previsão. Três diferenças materiais separam 2026-27 de 2015-16,
+    que é o análogo mais próximo com similaridade de 0,88.</p>
+    <p><b>Condição antecedente das bacias.</b> Em 2015 o Sudeste entrou no evento em crise hídrica declarada, com
+    reservatórios em volume morto. Hoje o Sudeste está em faixa confortável e o Sul chega saturado, após uma cheia.
+    A mesma anomalia climática produz consequências diferentes conforme o estado inicial.</p>
+    <p><b>Capacidade de observação.</b> A rede telemétrica e a observação por sensoriamento remoto evoluíram desde
+    então. Isso não reduz a exposição, mas encurta o tempo entre o evento e a percepção dele.</p>
+    <p><b>Estrutura de demanda.</b> A área irrigada e o uso consuntivo industrial cresceram. O mesmo déficit de
+    disponibilidade hoje atinge mais outorgas do que atingia há uma década — o que aparece nas cadeias em déficit
+    da tela anterior.</p>
+    <p class="cite">Conclusão de uso: o análogo orienta preparação e comunicação. Não substitui a previsão
     hidrológica nem justifica gatilho automático.</p>
   </div>`,{foot:srcOf('A15 · documentação obrigatória das diferenças',null,'C')})}</div>`;
  }}
+);
+</script>
+<script>
+/* ============================================================================
+   M8-06 · SIMULADOR E CENÁRIOS   ·   M8-07 · PROPAGAÇÃO EM CADEIA
+   ========================================================================== */
+
+/* ---------- estado do simulador ---------- */
+const SIM8 = { sev:1.00, dur:5, resp:30, restr:false, dim:'fin' };
+
+/* Fatores de ajuste por dimensão. A resposta antecipada e a restrição
+   preventiva protegem pessoas e ambiente — e custam dinheiro. O trade-off
+   é explícito porque é ele que a decisão precisa enxergar. */
+function fatoresSim(){
+  const f={fin:1,hum:1,soc:1,inf:1,amb:1};
+  Object.keys(f).forEach(k=>f[k]*=SIM8.sev);
+  const d=(SIM8.dur-5)/4;                         // duração acima do limiar
+  f.hum*=1+0.28*d; f.soc*=1+0.34*d; f.amb*=1+0.30*d; f.inf*=1+0.22*d; f.fin*=1+0.18*d;
+  const r=SIM8.resp/90;                           // antecipação da resposta
+  f.hum*=1-0.32*r; f.soc*=1-0.38*r; f.inf*=1-0.22*r; f.fin*=1+0.07*r;
+  if(SIM8.restr){ f.hum*=0.78; f.soc*=0.86; f.amb*=0.72; f.fin*=1.14; f.inf*=0.91; }
+  Object.keys(f).forEach(k=>f[k]=Math.max(0.05,f[k]));
+  return f;
+}
+function projetarSim(triId,fat){
+  const base=projetarCusto(triId||ENSOUI.tri);
+  const f=fat||fatoresSim();
+  return base.map(d=>{
+    const k=f[d.id]==null?1:f[d.id];
+    return Object.assign({},d,{p25:d.p25*k,p50:d.p50*k,p75:d.p75*k,fator:k});
+  });
+}
+/* Cenários fixos para comparação lado a lado */
+const CENARIOS = [
+  {id:'oti', nome:'Otimista',  desc:'Enfraquecimento antecipado, resposta preparada.',
+   sev:0.62, dur:3, resp:75, restr:true,  cor:'var(--normal)', sevTag:'normal'},
+  {id:'pes', nome:'Pessimista',desc:'Evento recorde, resposta reativa.',
+   sev:1.24, dur:8, resp:10, restr:false, cor:'var(--critico)', sevTag:'critico'}
 ];
+function fatoresDe(c){
+  const guardar={sev:SIM8.sev,dur:SIM8.dur,resp:SIM8.resp,restr:SIM8.restr};
+  Object.assign(SIM8,{sev:c.sev,dur:c.dur,resp:c.resp,restr:c.restr});
+  const f=fatoresSim();
+  Object.assign(SIM8,guardar);
+  return f;
+}
+function totalFin(dims){ return dims.find(d=>d.id==='fin').p50; }
+
+/* Blocos redesenhados sem re-render global, para o controle não perder o foco */
+function simResultado(){
+  const dims=projetarSim();
+  const base=projetarCusto(ENSOUI.tri);
+  return `<div class="grid g5" style="gap:8px">
+    ${dims.map((d,i)=>{
+      const b=base[i], delta=(d.p50-b.p50)/(b.p50||1)*100;
+      return `<div class="kpi" style="color:${sevColor(d.sev)};padding-left:24px">
+        <div class="rule"><i style="top:22%"></i><i style="top:50%"></i><i style="top:78%"></i>
+          <b style="top:${clamp(100-d.conv*100,4,94)}%"></b></div>
+        <div class="kl">${esc(d.nome)}</div>
+        <div class="kv" style="font-size:20px;color:${sevColor(d.sev)}">${esc(fmtDim(d.p50,d.un))}</div>
+        <div class="kd"><span class="trend ${delta>1?'up':delta<-1?'down':'flat'}">
+          ${delta>0?'▲ +':delta<0?'▼ ':''}${fmt(Math.abs(delta),0)}%</span>
+          <span class="tiny faint">vs referência</span></div>
+        <div class="tiny faint mono" style="margin-top:3px">${esc(fmtDim(d.p25,d.un))} – ${esc(fmtDim(d.p75,d.un))}</div>
+      </div>`}).join('')}
+  </div>`;
+}
+function simComparativo(){
+  const meu=projetarSim();
+  const cols=[
+    {n:CENARIOS[0].nome, d:CENARIOS[0].desc, dims:projetarSim(ENSOUI.tri,fatoresDe(CENARIOS[0])), cor:CENARIOS[0].cor, mid:false, tag:'normal'},
+    {n:'Seu cenário',    d:'Parâmetros definidos nos controles ao lado.', dims:meu, cor:'var(--hidro)', mid:true, tag:'info'},
+    {n:CENARIOS[1].nome, d:CENARIOS[1].desc, dims:projetarSim(ENSOUI.tri,fatoresDe(CENARIOS[1])), cor:CENARIOS[1].cor, mid:false, tag:'critico'}
+  ];
+  const maxFin=Math.max(...cols.map(c=>totalFin(c.dims)));
+  return `<div class="grid g3" style="gap:9px">
+    ${cols.map(c=>`<div class="cmpcol ${c.mid?'mid':''}">
+      <div class="ch">
+        <div class="flexr"><b style="font-size:12.5px;color:${c.cor}">${esc(c.n)}</b>
+          ${UI.badge(fmt(totalFin(c.dims)/maxFin*100,0)+'%',c.tag)}</div>
+        <div class="tiny faint" style="margin-top:2px;line-height:1.35;min-height:26px">${esc(c.d)}</div>
+      </div>
+      <div class="cb">
+        ${c.dims.map(d=>`<div style="margin-bottom:7px">
+          <div class="flexr tiny"><span style="flex:1">${esc(d.nome)}</span>
+            <span class="mono" style="color:var(--ink)">${esc(fmtDim(d.p50,d.un))}</span></div>
+          <div class="bar" style="margin-top:2px"><i style="width:${clamp(d.p50/(d.id==='fin'?maxFin:d.p50*1.6)*100,4,100)}%;background:${c.cor}"></i></div>
+        </div>`).join('')}
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+function simUpdate(){
+  const a=document.getElementById('simOut'); if(a)a.innerHTML=simResultado();
+  const b=document.getElementById('simCmp'); if(b)b.innerHTML=simComparativo();
+  const c=document.getElementById('simLbl');
+  if(c)c.innerHTML=`severidade ${fmt(SIM8.sev*100,0)}% · duração ${SIM8.dur} meses · resposta ${SIM8.resp} dias`
+    +(SIM8.restr?' · com restrição preventiva':'');
+  ['sev','dur','resp'].forEach(k=>{const n=document.getElementById('v_'+k);
+    if(n)n.textContent = k==='sev'?fmt(SIM8.sev*100,0)+'%' : k==='dur'?SIM8.dur+' meses' : SIM8.resp+' dias';});
+  const t=document.getElementById('swRestr');
+  if(t)t.className='swt '+(SIM8.restr?'on':'');
+}
+
+/* ---------- propagação do gargalo entre setores ---------- */
+const CASCATA = [
+  {nv:0,id:'clima', nome:'Anomalia climática',    sub:'Déficit de chuva de 17% a 29%', sev:'critico'},
+  {nv:1,id:'vazao', nome:'Vazão e armazenamento', sub:'Queda de afluência e de volume útil', sev:'critico'},
+  {nv:1,id:'nivel', nome:'Nível de rio e lago',   sub:'Cota abaixo da faixa operacional', sev:'critico'},
+  {nv:2,id:'capt',  nome:'Captação',              sub:'Tomada d’água acima da lâmina', sev:'critico'},
+  {nv:2,id:'outo',  nome:'Outorga',               sub:'Demanda concedida acima da oferta', sev:'critico'},
+  {nv:2,id:'irri',  nome:'Irrigação',             sub:'Área irrigada sem fonte segura', sev:'alerta'},
+  {nv:2,id:'logi',  nome:'Logística',             sub:'Calado e eclusa fora da faixa', sev:'alerta'},
+  {nv:3,id:'sane',  nome:'Saneamento',            sub:'Rodízio e perda de pressão', sev:'critico'},
+  {nv:3,id:'ener',  nome:'Energia',               sub:'Despacho térmico substituindo hídrica', sev:'critico'},
+  {nv:3,id:'agro',  nome:'Agropecuária',          sub:'Perda de safra e de rebanho', sev:'alerta'},
+  {nv:3,id:'indu',  nome:'Indústria',             sub:'Redução de marcha por falta de água', sev:'alerta'},
+  {nv:3,id:'tran',  nome:'Transporte',            sub:'Transbordo rodoviário forçado', sev:'atencao'},
+  {nv:4,id:'cust',  nome:'Custo projetado',       sub:'Cinco dimensões consolidadas', sev:'modelado'}
+];
+const PROPAG = [
+  {de:'Nível de rio',  para:'Captação',   mec:'Cota da tomada d’água acima da lâmina disponível', lag:'0–15 d', amp:1.0, dim:'Infraestrutura', ordem:1},
+  {de:'Captação',      para:'Saneamento', mec:'Redução de vazão captada obriga rodízio de abastecimento', lag:'5–20 d', amp:1.4, dim:'Humano', ordem:1},
+  {de:'Saneamento',    para:'Saúde',      mec:'Intermitência eleva doença de veiculação hídrica', lag:'20–60 d', amp:1.9, dim:'Social', ordem:2},
+  {de:'Vazão',         para:'Energia',    mec:'Queda de afluência aciona despacho térmico', lag:'0–30 d', amp:1.2, dim:'Financeiro', ordem:1},
+  {de:'Energia',       para:'Indústria',  mec:'Custo marginal eleva tarifa e comprime margem', lag:'30–90 d', amp:1.6, dim:'Financeiro', ordem:2},
+  {de:'Outorga',       para:'Irrigação',  mec:'Alocação negociada corta a fatia da irrigação', lag:'15–45 d', amp:1.3, dim:'Financeiro', ordem:1},
+  {de:'Irrigação',     para:'Agropecuária',mec:'Perda de produtividade e de área plantada', lag:'60–120 d', amp:1.8, dim:'Financeiro', ordem:2},
+  {de:'Agropecuária',  para:'Emprego rural',mec:'Redução de posto de trabalho sazonal', lag:'90–180 d', amp:2.1, dim:'Social', ordem:3},
+  {de:'Nível de rio',  para:'Logística',  mec:'Calado restrito reduz carga por comboio', lag:'0–10 d', amp:1.1, dim:'Financeiro', ordem:1},
+  {de:'Logística',     para:'Abastecimento',mec:'Combustível e alimento encarecem em cidade isolada', lag:'10–40 d', amp:2.4, dim:'Humano', ordem:2},
+  {de:'Vazão',         para:'Ecossistema',mec:'Vazão ecológica não atendida e mortandade de fauna', lag:'15–60 d', amp:1.5, dim:'Ambiental', ordem:1},
+  {de:'Ecossistema',   para:'Pesca',      mec:'Queda de estoque pesqueiro e de renda ribeirinha', lag:'60–180 d', amp:1.7, dim:'Social', ordem:2},
+  {de:'Indústria',     para:'Emprego urbano',mec:'Suspensão de turno em polo industrial', lag:'60–120 d', amp:1.4, dim:'Social', ordem:3},
+  {de:'Energia',       para:'Tarifa',     mec:'Bandeira tarifária pressiona custo domiciliar', lag:'30–60 d', amp:1.3, dim:'Financeiro', ordem:2}
+];
+
+SCREENS.M8.splice(5,0,
+{id:'M8-06',nome:'Simulador e cenários',badge:['ao vivo','info'],
+ obj:'Ajuste severidade, duração e antecipação da resposta e veja o custo mudar. O trade-off entre proteger pessoas e gastar dinheiro fica explícito.',
+ actions:[{t:'Restaurar referência',fn:()=>{Object.assign(SIM8,{sev:1.0,dur:5,resp:30,restr:false});APP.rerender()}},
+   {t:'Adotar como cenário de planejamento',k:'btn-p',fn:()=>{
+     UI.toast('Cenário adotado','Parâmetros registrados com autor e horário. Segue para a fila de decisão.','ok');
+     BUS.emit('decision.approval.required',{},
+       {text:`Cenário de planejamento ENSO adotado — severidade ${fmt(SIM8.sev*100,0)}%, resposta ${SIM8.resp} dias`,
+        sev:'alerta',mod:'M8'});}}],
+ after(){ simUpdate(); },
+ render(){
+  const t=trimestre(ENSOUI.tri);
+  return `<div class="flexr mb6"><span class="eyebrow">Trimestre</span>${selTri()}
+    <span class="tiny faint mono" id="simLbl" style="margin-left:auto"></span></div>
+
+  <div class="grid gB">
+    ${UI.card('Parâmetros do cenário',`
+      <div class="simctl">
+        <div class="hd"><b>Severidade do evento</b><span class="v" id="v_sev">${fmt(SIM8.sev*100,0)}%</span></div>
+        <input type="range" class="rng" min="40" max="130" step="2" value="${Math.round(SIM8.sev*100)}"
+          oninput="SIM8.sev=this.value/100;simUpdate()">
+        <div class="ex">100% corresponde ao pico projetado de NDJ 2026. Acima disso, evento recorde.</div>
+      </div>
+      <div class="simctl">
+        <div class="hd"><b>Duração acima do limiar</b><span class="v" id="v_dur">${SIM8.dur} meses</span></div>
+        <input type="range" class="rng" min="2" max="10" step="1" value="${SIM8.dur}"
+          oninput="SIM8.dur=Number(this.value);simUpdate()">
+        <div class="ex">Meses com ONI acima de +1,5 °C. A duração pesa mais no impacto humano e social que no financeiro.</div>
+      </div>
+      <div class="simctl">
+        <div class="hd"><b>Antecipação da resposta</b><span class="v" id="v_resp">${SIM8.resp} dias</span></div>
+        <input type="range" class="rng" min="0" max="90" step="5" value="${SIM8.resp}"
+          oninput="SIM8.resp=Number(this.value);simUpdate()">
+        <div class="ex">Dias entre a decisão de preparar e o início do impacto. Reduz custo humano e eleva o financeiro.</div>
+      </div>
+      <hr class="hr">
+      <div class="swt ${SIM8.restr?'on':''}" id="swRestr"
+        onclick="SIM8.restr=!SIM8.restr;simUpdate()"><i></i>Restrição preventiva de captação</div>
+      <div class="ex" style="margin-top:4px">Protege abastecimento humano e vazão ecológica. Em contrapartida,
+      transfere perda para irrigação e indústria.</div>
+      ${limitNote('Os fatores de mitigação são premissas do modelo, não resultados medidos. Servem para comparar alternativas, não para prometer efeito.')}`,
+      {sub:'arraste para recalcular',foot:srcOf('M8 · modelo paramétrico · '+esc(t.nome),null,'C')})}
+
+    <div class="flexc">
+      ${UI.card('Custo com os parâmetros atuais','<div id="simOut">'+simResultado()+'</div>',
+        {sub:'variação medida contra o cenário de referência do trimestre',
+         foot:srcOf('M8 · recálculo ao vivo',null,'C')})}
+      ${UI.card('Leitura do trade-off',`<div class="doc" style="font-size:11.5px">
+        <p>Aumentar a antecipação da resposta de 0 para 90 dias reduz a exposição humana em torno de 32% e a social
+        em 38% — e eleva o custo financeiro em cerca de 7%, que é o preço de preparar.</p>
+        <p>A restrição preventiva de captação é a decisão mais dura: corta 22% da exposição humana e 28% da ambiental,
+        mas transfere 14% de custo adicional para irrigação e indústria. É exatamente o conflito que chega ao comitê
+        de bacia.</p>
+        <p class="cite">Nenhum dos dois elimina a exposição. Ambos deslocam quem paga a conta — e essa é a decisão
+        que a plataforma existe para tornar explícita.</p></div>`,
+        {foot:srcOf('M8 · premissas de mitigação',null,'C')})}
+    </div>
+  </div>
+
+  <div class="mt10">${UI.card('Comparação lado a lado','<div id="simCmp">'+simComparativo()+'</div>',
+    {sub:'otimista · seu cenário · pessimista, no mesmo trimestre',
+     right:`<button class="btn btn-sm" onclick="Object.assign(SIM8,{sev:1.0,dur:5,resp:30,restr:false});APP.rerender()">Restaurar referência</button>`,
+     foot:srcOf('M8 · cenários com os mesmos limiares e a mesma janela',null,'C')})}</div>`;
+ }},
+
+{id:'M8-07',nome:'Propagação em cadeia',badge:['3ª ordem','alerta'],
+ obj:'Como o gargalo hídrico atravessa setores: mecanismo, defasagem e amplificação até virar custo.',
+ actions:[{t:'Executar A12',fn:()=>AGENTS.start('A12')},
+   {t:'Abrir dependências',fn:()=>APP.go('M11-03')}],
+ render(){
+  const niveis=[
+    ['Origem climática',0],['Resposta hídrica',1],['Gargalo',2],['Setor atingido',3],['Custo',4]
+  ];
+  const ordem1=PROPAG.filter(p=>p.ordem===1).length;
+  const ordem3=PROPAG.filter(p=>p.ordem>=3).length;
+  return `${kpiRow([
+    {label:'Encadeamentos mapeados',value:PROPAG.length,sev:'info',plain:true,mark:60},
+    {label:'Efeitos de primeira ordem',value:ordem1,sev:'critico',mark:45,desc:'resposta em até 45 dias'},
+    {label:'Efeitos de terceira ordem',value:ordem3,sev:'alerta',mark:25,desc:'emprego e renda, acima de 90 dias'},
+    {label:'Maior amplificação',value:'2,4',unit:'×',sev:'critico',mark:80,desc:'logística → abastecimento isolado'},
+    {label:'Defasagem máxima',value:'180',unit:'dias',sev:'atencao',plain:true,mark:70}
+  ])}
+
+  ${UI.card('Como o déficit atravessa a economia',`
+    <div class="lane">
+      ${niveis.map(([lbl,nv])=>`<div>
+        <div class="eyebrow" style="margin-bottom:6px">${esc(lbl)}</div>
+        ${CASCATA.filter(c=>c.nv===nv).map(c=>`
+          <div class="kbc" style="border-left-color:${sevColor(c.sev)};margin-bottom:6px">
+            <div class="t" style="font-size:11.5px">${esc(c.nome)}</div>
+            <div class="tiny faint" style="margin-top:2px;line-height:1.3">${esc(c.sub)}</div>
+          </div>`).join('')}
+      </div>`).join('')}
+    </div>
+    <div class="tiny faint" style="margin-top:8px">Cada coluna alimenta a seguinte. O gargalo é o ponto de estrangulamento:
+    é onde a anomalia deixa de ser hidrologia e passa a ser economia.</div>`,
+    {foot:srcOf('M8 · cascata setorial',null,'C')})}
+
+  <div class="mt10">${UI.card('Encadeamentos, defasagem e amplificação',UI.table({key:'prop8',rows:PROPAG,src:'A12 · dependency trace',
+    cols:[
+      {k:'ordem',t:'Ordem',cls:'n',get:r=>UI.badge(r.ordem+'ª',r.ordem===1?'critico':r.ordem===2?'alerta':'atencao'),raw:r=>r.ordem},
+      {k:'de',t:'De',get:r=>`<b>${esc(r.de)}</b>`},
+      {k:'para',t:'Para',get:r=>`<b style="color:var(--hidro)">${esc(r.para)}</b>`},
+      {k:'mec',t:'Mecanismo',cls:'wrap'},
+      {k:'lag',t:'Defasagem',cls:'n'},
+      {k:'amp',t:'Amplificação',cls:'n',get:r=>`<div style="width:76px">${UI.prog((r.amp-1)/1.5*100,r.amp>1.8?'var(--critico)':'var(--atencao)')}</div>`},
+      {k:'dim',t:'Dimensão afetada',get:r=>UI.badge(r.dim,r.dim==='Humano'||r.dim==='Financeiro'?'critico':'atencao')}
+    ]}),{tight:true,foot:srcOf('amplificação: quanto o efeito cresce em relação ao elo anterior',null,'C')})}</div>
+
+  <div class="grid g2 mt10">
+    ${UI.card('Onde intervir primeiro',`<div class="doc" style="font-size:11.5px">
+      <p>A leitura útil desta tabela não é a lista de danos. É onde a intervenção rende mais.</p>
+      <h4>Alta amplificação e defasagem longa</h4>
+      <p>Logística para abastecimento amplifica 2,4 vezes com 10 a 40 dias de defasagem. Há janela para agir, e o
+      efeito evitado é grande. É o melhor candidato a ação antecipada.</p>
+      <h4>Alta amplificação e defasagem curta</h4>
+      <p>Captação para saneamento amplifica 1,4 vez em 5 a 20 dias. A janela é estreita: exige preparação prévia,
+      não reação.</p>
+      <h4>Baixa amplificação</h4>
+      <p>Vazão para energia amplifica apenas 1,2 vez. Doloroso no caixa, mas previsível e contratável — não é onde
+      a preparação rende mais.</p>
+      <p class="cite">Regra prática: priorizar elos com amplificação acima de 1,5 e defasagem acima de 30 dias.</p>
+    </div>`,{foot:srcOf('A12 · priorização por elo',null,'C')})}
+    ${UI.card('Amplificação por dimensão',CH.hbars({data:['Humano','Social','Financeiro','Ambiental','Infraestrutura'].map(d=>{
+      const ps=PROPAG.filter(p=>p.dim===d);
+      const m=ps.length?ps.reduce((s,p)=>s+p.amp,0)/ps.length:1;
+      return {l:d+' ('+ps.length+' elos)',v:(m-1)*100,
+        c:m>1.6?'#FF4A5F':m>1.3?'#FF8534':'#35B8F0',t:fmt(m,2)+'×'}}),lw:150,vw:44}),
+      {sub:'amplificação média dos encadeamentos que terminam em cada dimensão',
+       foot:srcOf('M8 · síntese da cascata',null,'C')})}
+  </div>`;
+ }}
+);
 </script>
 <script>
 /* ============================================================================
