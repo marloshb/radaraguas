@@ -1748,6 +1748,10 @@ const MAPS=(()=>{
   let L={}; let host=null, cfgAtual=null, lastFrame=-1, swipeW=null, viewHost=null;
   const visUser={};              // camadas ligadas/desligadas pelo operador — sobrepõem o padrão da tela
   let tool='identify';           // identify | pan
+  let painelPref=null;           // null = automático pela largura da tela; true/false = escolha do operador
+  function telaEstreita(){return (typeof window!=='undefined'&&window.innerWidth)?window.innerWidth<1180:false}
+  function panelsOpen(){return painelPref!=null?painelPref:!telaEstreita()}
+  function togglePanels(){painelPref=!panelsOpen();APP.rerender()}
   let baseLayers=null;           // conjunto declarado pela tela atual
   function effectiveVis(base){
     if(base)baseLayers=base.slice();
@@ -2387,13 +2391,22 @@ const MAPS=(()=>{
     return 'carregando…';
   }
 
+  if(typeof window!=='undefined'&&window.addEventListener){
+    let larguraAnterior=window.innerWidth;
+    window.addEventListener('resize',debounce(()=>{
+      const antes=larguraAnterior<1180, agora=window.innerWidth<1180;
+      larguraAnterior=window.innerWidth;
+      if(painelPref==null&&antes!==agora)APP.rerender();
+    },220));
+  }
+
   CLOCK.onTick(()=>{
     if(engine==='arcgis'&&ready)drawLocal(false);
     else if(engine==='raster'&&rRepaint&&frameNow().i!==lastFrame){lastFrame=frameNow().i;rRepaint()}
   });
 
   boot();
-  return {mount,toggle,goTo,applyVis,retry,engineLabel,setBasemap,setTool,probeServices,tool:()=>tool,visible:()=>effectiveVis(null),basemaps:()=>BASEMAPS,basemapId:()=>basemapId,
+  return {mount,toggle,goTo,applyVis,retry,engineLabel,setBasemap,setTool,probeServices,panelsOpen,togglePanels,tool:()=>tool,visible:()=>effectiveVis(null),basemaps:()=>BASEMAPS,basemapId:()=>basemapId,
     isReady:()=>ready, isFailed:()=>engine==='raster', engine:()=>engine,
     diag:()=>diag, view:()=>view};
 })();
@@ -2409,6 +2422,7 @@ function mapBlock(o){
     $$('.lyr[data-bm]').forEach(b=>b.onclick=()=>MAPS.setBasemap(b.dataset.bm));
     const rb=$('#retrySdk'); if(rb)rb.onclick=()=>MAPS.retry();
     $$('#mapTool button[data-tool]').forEach(b=>b.onclick=()=>MAPS.setTool(b.dataset.tool));
+    const tp=$('#togglePanels'); if(tp)tp.onclick=()=>MAPS.togglePanels();
     const av=$('#allVis'); if(av)av.onclick=()=>{
       LAYERS.filter(l=>l.grupo!=='Contexto').forEach(l=>{if(!MAPS.visible().has(l.id))MAPS.toggle(l.id)})};
     const db=$('#diagBtn'); if(db)db.onclick=()=>UI.modal('Diagnóstico do motor geoespacial',
@@ -2445,18 +2459,23 @@ function mapBlock(o){
   LAYERS.forEach(l=>{ if(o.only&&o.only.indexOf(l.id)<0)return; (grupos[l.grupo]=grupos[l.grupo]||[]).push(l)});
   const f=frameNow();
   const eng=MAPS.engine();
+  const painel=MAPS.panelsOpen();
   return `<div class="mapwrap" style="${o.style||'height:100%'}">
     <div id="${id}" style="position:absolute;inset:0"></div>
     <div class="map-ov ov-tl" style="display:flex;flex-direction:column;gap:7px">
       <div class="mpanel">
-        <div class="mb" style="padding:5px 6px">
+        <div class="mb" style="padding:5px 6px;display:flex;gap:6px;align-items:center">
           <span class="seg" id="mapTool">
             <button data-tool="identify" class="${MAPS.tool()==='identify'?'on':''}" title="Clique em uma feição para ver os atributos">⌖ Identificar</button>
             <button data-tool="pan" class="${MAPS.tool()==='pan'?'on':''}" title="Somente navegação">✥ Navegar</button>
           </span>
+          <button id="togglePanels" class="btn btn-sm ${painel?'':'on'}"
+            title="${painel?'Recolher camadas e legenda para ampliar o mapa':'Mostrar camadas e legenda'}"
+            aria-pressed="${painel?'false':'true'}" style="padding:0 8px">
+            ${painel?'⇱ Recolher painéis':'⇲ Painéis'}</button>
         </div>
       </div>
-      <div class="mpanel" style="width:252px">
+      ${painel?`<div class="mpanel" style="width:252px">
         <div class="mh">Camadas
           ${eng==='arcgis'?UI.statusDot('ok'):eng==='raster'?UI.statusDot('atencao'):UI.statusDot('idle')}
           <button id="diagBtn" title="Diagnóstico do motor geoespacial"
@@ -2477,9 +2496,10 @@ function mapBlock(o){
           <span class="tiny faint">${shown.length} de ${LAYERS.length} visíveis</span>
           <button id="allVis" class="tiny" style="margin-left:auto;color:var(--hidro);text-decoration:underline">ligar operacionais</button>
         </div>
-      </div>
+      </div>`:`<div class="mpanel"><div class="mb" style="padding:5px 8px">
+        <span class="tiny faint">${shown.length}/${LAYERS.length} camadas · ${esc(MAPS.engineLabel())}</span></div></div>`}
     </div>
-    <div class="map-ov ov-tr" style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
+    ${painel?`<div class="map-ov ov-tr" style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
       ${o.noLegend?'':`<div class="mpanel" style="width:216px">
         <div class="mh">Legenda</div>
         <div class="mb">
@@ -2501,9 +2521,9 @@ function mapBlock(o){
           <div class="tiny faint" style="margin-top:5px;line-height:1.4">Serviços públicos do ArcGIS Online.
           Sem chave, sem conta de desenvolvedor e sem consumo de créditos.</div>
         </div></div>`:''}
-    </div>
+    </div>`:''}
     ${o.noWatermark?'':`<div class="wm">${WM}</div>`}
-    ${o.overlayBottomLeft||''}
+    ${painel?(o.overlayBottomLeft||''):''}
   </div>`;
 }
 </script>
