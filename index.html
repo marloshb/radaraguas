@@ -952,6 +952,8 @@ const LAYERS=[
    url:null, item:null, on:true, fonte:'M6 · '+WM, lic:'Mockup', cls:'C'},
   {id:'LY-DIV',  nome:'Divergência previsto × observado',      grupo:'Convergência',tipo:'local',
    url:null, item:null, on:false, fonte:'M7 · ComparisonRun', lic:'Interno', cls:'C'},
+  {id:'LY-ENSO', nome:'Impacto do El Niño — superfície',       grupo:'ENSO',      tipo:'local',
+   url:null, item:null, on:false, fonte:'M8 · índice composto por célula', lic:'Interno', cls:'C'},
   {id:'LY-REC',  nome:'Receptores expostos (CHT/IBGE mock)',   grupo:'Impacto',   tipo:'local',
    url:null, item:null, on:false, fonte:'M11 · ExposureAsset', lic:'Mockup', cls:'D'},
   {id:'LY-MUN',  nome:'Municípios em acompanhamento',          grupo:'Impacto',   tipo:'local',
@@ -1415,6 +1417,132 @@ const ANALOGOS_EN = [
   {ano:'2023-24', oni:2.0, sim:0.84, desfecho:'Seca recorde na Amazônia com isolamento de comunidades.',
    dif:'Evento mais curto e com pico deslocado.', custo:'R$ 27 bi (valores corrigidos)'}
 ];
+</script>
+<script>
+/* ============================================================================
+   M8 · SUPERFÍCIE DE IMPACTO DO EL NIÑO
+   Grade regular sobre o território, interpolada a partir do sinal das doze
+   regiões hidrográficas e ponderada pela exposição de cada uma. A superfície
+   responde ao trimestre selecionado e aos parâmetros do simulador.
+   ========================================================================== */
+
+/* Contorno simplificado do Brasil — máscara para não pintar oceano nem vizinhos */
+const BR_MASK = [
+  [-51.6,4.3],[-50.0,4.4],[-51.0,1.0],[-48.5,-0.8],[-44.8,-2.5],[-41.0,-2.8],
+  [-37.3,-5.0],[-35.2,-5.8],[-34.8,-7.2],[-35.5,-9.5],[-37.0,-11.0],[-38.5,-13.0],
+  [-39.0,-17.5],[-40.5,-20.5],[-42.0,-22.9],[-45.0,-23.8],[-48.5,-25.5],[-48.6,-28.5],
+  [-50.0,-30.5],[-52.2,-32.2],[-53.4,-33.7],[-55.6,-30.9],[-57.6,-30.2],[-56.0,-27.4],
+  [-54.6,-25.6],[-54.3,-24.0],[-57.6,-22.1],[-58.0,-20.0],[-60.0,-16.3],[-58.4,-12.5],
+  [-60.5,-10.0],[-65.3,-9.8],[-69.5,-10.9],[-70.6,-9.5],[-72.9,-9.0],[-73.9,-7.3],
+  [-72.9,-5.1],[-70.0,-4.2],[-69.4,-1.1],[-69.8,0.6],[-67.3,1.9],[-67.1,2.8],
+  [-64.0,4.1],[-60.7,5.2],[-60.0,4.6],[-59.8,3.9],[-57.3,3.3],[-55.9,2.5],[-54.5,2.3]
+];
+function dentroDoBrasil(lng,lat){
+  let d=false;
+  for(let i=0,j=BR_MASK.length-1;i<BR_MASK.length;j=i++){
+    const xi=BR_MASK[i][0],yi=BR_MASK[i][1],xj=BR_MASK[j][0],yj=BR_MASK[j][1];
+    if(((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/((yj-yi)||1e-9)+xi)) d=!d;
+  }
+  return d;
+}
+
+/* Exposição relativa por região hidrográfica: população dependente das cadeias
+   com gargalo, normalizada, com piso para não zerar regiões sem cadeia mapeada. */
+const EXPO_RH = (()=>{
+  const m={}; let max=1;
+  REGIOES.forEach(r=>{
+    const pop=CADEIAS_ENSO.filter(c=>c.rh===r.id).reduce((s,c)=>s+c.pop,0);
+    const cad=CADEIAS_ENSO.filter(c=>c.rh===r.id).length;
+    m[r.id]=pop/1e6 + cad*0.9;
+    if(m[r.id]>max)max=m[r.id];
+  });
+  Object.keys(m).forEach(k=>m[k]=0.34+0.66*(m[k]/max));
+  return m;
+})();
+
+/* Grade regular. Passo de 1,3° dá ~450 células sobre o território. */
+const ENSO_GRID = (()=>{
+  const cells=[], passo=1.3;
+  for(let lng=-73.5; lng<=-34.5; lng+=passo){
+    for(let lat=-33.5; lat<=5.2; lat+=passo){
+      const cx=lng+passo/2, cy=lat+passo/2;
+      if(!dentroDoBrasil(cx,cy))continue;
+      // interpolação por distância inversa a partir das doze regiões
+      let sw=0, sAnom=0, sSkill=0, sExpo=0, maisProx=null, dMin=1e9;
+      REGIOES.forEach(r=>{
+        const sg=ENSO_SINAL.find(x=>x.rh===r.id); if(!sg)return;
+        const dx=(cx-r.lng)*Math.cos(cy*Math.PI/180), dy=cy-r.lat;
+        const d2=dx*dx+dy*dy;
+        if(d2<dMin){dMin=d2;maisProx=r.id}
+        const w=1/Math.pow(d2+0.55,1.35);
+        sw+=w; sAnom+=w*sg.chuva; sSkill+=w*sg.skill; sExpo+=w*(EXPO_RH[r.id]||0.4);
+      });
+      cells.push({x:lng,y:lat,p:passo,cx,cy,
+        anom:sAnom/sw, skill:sSkill/sw, expo:sExpo/sw, rh:maisProx});
+    }
+  }
+  return cells;
+})();
+
+/* Modos de visualização da superfície */
+const ENSO_MODOS = [
+  {id:'impacto', nome:'Índice de impacto',  desc:'Anomalia ponderada pela exposição das cadeias e pela aderência do sinal.'},
+  {id:'anom',    nome:'Anomalia de chuva',  desc:'Desvio percentual em relação à média climatológica.'},
+  {id:'seca',    nome:'Risco de seca',      desc:'Apenas o déficit, realçado onde há população dependente.'},
+  {id:'cheia',   nome:'Risco de cheia',     desc:'Apenas o excesso, realçado onde há exposição urbana.'},
+  {id:'custo',   nome:'Exposição financeira',desc:'Fração do custo projetado atribuível a cada célula.'}
+];
+
+/* Valor da célula no modo e trimestre correntes (0..1, com sinal em 'anom') */
+function valorCelula(c, modo, sev, fatFin){
+  const a = c.anom * sev;                       // anomalia efetiva no trimestre
+  const conf = 0.55 + 0.45*c.skill;             // sinal fraco pesa menos
+  switch(modo){
+    case 'anom':  return clamp(a/32, -1, 1);
+    case 'seca':  return a<0 ? clamp(Math.abs(a)/24 * (0.55+0.45*c.expo) * conf, 0, 1) : 0;
+    case 'cheia': return a>0 ? clamp(a/27 * (0.55+0.45*c.expo) * conf, 0, 1) : 0;
+    case 'custo': return clamp(Math.abs(a)/26 * (0.35+0.65*c.expo) * conf * (fatFin||1), 0, 1);
+    default:      return clamp(Math.abs(a)/25 * (0.5+0.5*c.expo) * conf, 0, 1);
+  }
+}
+/* Rampas: divergente para anomalia, sequencial para os demais */
+function corENSO(v, modo){
+  if(modo==='anom'){
+    const t=clamp(Math.abs(v),0,1);
+    return v<0 ? [Math.round(255-40*t), Math.round(196-122*t), Math.round(120-68*t)]
+               : [Math.round(120-67*t), Math.round(184-24*t), Math.round(230+10*t)];
+  }
+  if(modo==='cheia'){const t=clamp(v,0,1);
+    return [Math.round(150-125*t), Math.round(210-30*t), Math.round(235+5*t)];}
+  const t=clamp(v,0,1);                          // verde → amarelo → laranja → vermelho
+  if(t<0.34){const k=t/0.34;   return [Math.round(70+165*k),  Math.round(170+40*k), Math.round(110-40*k)]}
+  if(t<0.67){const k=(t-0.34)/0.33; return [Math.round(235+15*k), Math.round(210-80*k), Math.round(70-20*k)]}
+  const k=(t-0.67)/0.33;        return [Math.round(250+5*k),  Math.round(130-76*k), Math.round(50+10*k)];
+}
+function opacENSO(v, modo){
+  const t=modo==='anom'?Math.abs(v):v;
+  return t<0.05 ? 0 : clamp(0.22+0.54*t, 0, 0.78);
+}
+
+/* Estado da camada */
+const ENSOMAP = { modo:'impacto', ligada:true, usarSim:false };
+
+/* Estatísticas para a legenda e para o resumo da tela */
+function statsENSO(){
+  const t=trimestre(ENSOUI.tri);
+  const fat=(ENSOMAP.usarSim&&typeof fatoresSim==='function')?fatoresSim().fin:1;
+  const sev=(ENSOMAP.usarSim&&typeof SIM8!=='undefined')?t.sev*SIM8.sev:t.sev;
+  let alto=0, medio=0, baixo=0, soma=0, pior=null, vPior=-1;
+  ENSO_GRID.forEach(c=>{
+    const v=Math.abs(valorCelula(c,ENSOMAP.modo,sev,fat));
+    soma+=v;
+    if(v>0.62)alto++; else if(v>0.34)medio++; else baixo++;
+    if(v>vPior){vPior=v;pior=c}
+  });
+  return {alto,medio,baixo,total:ENSO_GRID.length,media:soma/ENSO_GRID.length,
+    pior,vPior,sev,fat,
+    rhPior:(REGIOES.find(r=>r.id===(pior||{}).rh)||{}).nome||'—'};
+}
 </script>
 <script>
 /* ============================================================================
@@ -2096,7 +2224,7 @@ const MAPS=(()=>{
       map.add(lyr);
     });
 
-    ['LY-PREV','LY-OBS','LY-DIV','LY-AOI','LY-MUN','LY-REC','LY-REDE','LY-RSV'].forEach(id=>{
+    ['LY-ENSO','LY-PREV','LY-OBS','LY-DIV','LY-AOI','LY-MUN','LY-REC','LY-REDE','LY-RSV'].forEach(id=>{
       const cfg=LAYERS.find(l=>l.id===id);
       L[id]=new GraphicsLayer({id,title:cfg.nome,visible:!!cfg.on});
       map.add(L[id]);
@@ -2253,8 +2381,45 @@ const MAPS=(()=>{
     const m={normal:[47,191,113],info:[53,184,240],atencao:[232,163,23],alerta:[255,133,52],critico:[255,74,95],modelado:[157,123,255]};
     return (m[s]||[85,112,126]).concat([a]);
   }
+  /* Superfície de impacto do ENSO: redesenhada quando muda o modo, o
+     trimestre ou os parâmetros do simulador — não a cada quadro do relógio. */
+  let ensoAssinatura=null;
+  function drawENSO(force){
+    if(!ready||!sdk||!L['LY-ENSO'])return;
+    if(typeof ENSO_GRID==='undefined')return;
+    const st=statsENSO();
+    const assin=[ENSOMAP.modo,ENSOUI.tri,ENSOMAP.usarSim,st.sev.toFixed(3),st.fat.toFixed(3)].join('|');
+    if(!force&&assin===ensoAssinatura)return;
+    ensoAssinatura=assin;
+    const G=sdk.Graphic;
+    L['LY-ENSO'].removeAll();
+    ENSO_GRID.forEach(c=>{
+      const v=valorCelula(c,ENSOMAP.modo,st.sev,st.fat);
+      const op=opacENSO(v,ENSOMAP.modo);
+      if(op<=0)return;
+      const rgb=corENSO(v,ENSOMAP.modo);
+      const anel=[[c.x,c.y],[c.x+c.p,c.y],[c.x+c.p,c.y+c.p],[c.x,c.y+c.p]];
+      L['LY-ENSO'].add(new G({
+        geometry:toPoly([anel]),
+        symbol:{type:'simple-fill',color:rgb.concat([op]),outline:{width:0}},
+        attributes:{
+          Camada:'Impacto do El Niño — superfície interpolada',
+          Modo:(ENSO_MODOS.find(m=>m.id===ENSOMAP.modo)||{}).nome,
+          Trimestre:trimestre(ENSOUI.tri).nome,
+          'Anomalia de chuva':fmt(c.anom*st.sev,1)+'%',
+          'Índice (0–1)':fmt(Math.abs(v),2),
+          'Exposição relativa':fmt(c.expo,2),
+          'Aderência do sinal':fmt(c.skill,2),
+          'Região dominante':(REGIOES.find(r=>r.id===c.rh)||{}).nome||'—',
+          Natureza:'valor interpolado — não é medição pontual'
+        },
+        popupTemplate:popupFor('Impacto do El Niño')
+      }));
+    });
+  }
   function drawLocal(force){
     if(!ready||!sdk)return;
+    drawENSO(force);
     const f=frameNow();
     if(!force&&f.i===lastFrame)return;
     lastFrame=f.i;
@@ -2424,6 +2589,18 @@ const MAPS=(()=>{
         ctx.closePath();
         if(fill){ctx.fillStyle=fill;ctx.fill()}
         if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=w||1.5;ctx.stroke()}
+      }
+      if(vis.indexOf('LY-ENSO')>=0&&typeof ENSO_GRID!=='undefined'){
+        const st=statsENSO();
+        ENSO_GRID.forEach(c=>{
+          const v=valorCelula(c,ENSOMAP.modo,st.sev,st.fat);
+          const op=opacENSO(v,ENSOMAP.modo); if(op<=0)return;
+          const a=S(c.x,c.y+c.p), b=S(c.x+c.p,c.y);
+          if(b[0]<-20||a[0]>W+20||b[1]<-20||a[1]>H+20)return;
+          const rgb=corENSO(v,ENSOMAP.modo);
+          ctx.fillStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+op.toFixed(2)+')';
+          ctx.fillRect(a[0],a[1],Math.max(1,b[0]-a[0]+0.6),Math.max(1,b[1]-a[1]+0.6));
+        });
       }
       ctx.beginPath();
       CANAL_REF.forEach((p,i)=>{const s=S(p[0],p[1]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1])});
@@ -2626,6 +2803,11 @@ const MAPS=(()=>{
       APP.rerender(); return res;
     });
   }
+  function refreshENSO(){
+    if(engine==='arcgis')drawENSO(true);
+    else if(engine==='raster'&&rRepaint)rRepaint();
+    APP.rerender();
+  }
   function engineLabel(){
     if(engine==='arcgis')return 'ArcGIS SDK 4.30';
     if(engine==='raster')return 'motor raster';
@@ -2647,7 +2829,7 @@ const MAPS=(()=>{
   });
 
   boot();
-  return {mount,toggle,goTo,applyVis,retry,engineLabel,setBasemap,setTool,probeServices,panelsOpen,togglePanels,tool:()=>tool,visible:()=>effectiveVis(null),basemaps:()=>BASEMAPS,basemapId:()=>basemapId,
+  return {mount,toggle,goTo,applyVis,retry,engineLabel,setBasemap,setTool,probeServices,panelsOpen,togglePanels,refreshENSO,tool:()=>tool,visible:()=>effectiveVis(null),basemaps:()=>BASEMAPS,basemapId:()=>basemapId,
     isReady:()=>ready, isFailed:()=>engine==='raster', engine:()=>engine,
     diag:()=>diag, view:()=>view};
 })();
@@ -2816,7 +2998,7 @@ const MODULOS=[
  {id:'M8', nome:'ENSO Água Brasil — El Niño e La Niña', curto:'ENSO Água Brasil', sev:'critico',
   mis:'Traduzir o estado e a probabilidade do ENSO em impacto hídrico regional, gargalo por cadeia e custo projetado por dimensão.',
   users:'Climatologistas, hidrólogos, planejamento, reservatórios, regulação, dirigentes e comunicação.',
-  menu:['Painel ENSO','Sinal regional','Impacto hidrológico','Cadeias e gargalos','Custo projetado','Simulador e cenários','Propagação em cadeia','Preparação','Análogos'],
+  menu:['Painel ENSO','Mapa de impacto','Sinal regional','Impacto hidrológico','Cadeias e gargalos','Custo projetado','Simulador','Propagação','Preparação','Análogos'],
   agentes:['A15','A08','A12']},
  {id:'M9', nome:'Secas, Cheias e Eventos Críticos', curto:'Eventos Críticos', sev:'critico',
   mis:'Detectar, classificar e acompanhar eventos hidrológicos críticos em um registro único e auditável.',
@@ -5966,7 +6148,73 @@ SCREENS.M8=[
     foot:srcOf(ENSO.fonteNota,null,'A')})}</div>`;
  }},
 
-{id:'M8-02',nome:'Sinal regional',
+{id:'M8-02',nome:'Mapa de impacto',nopad:true,badge:['heatmap','critico'],
+ obj:'Superfície contínua do impacto do El Niño sobre o território, interpolada a partir do sinal das doze regiões hidrográficas e ponderada pela exposição das cadeias.',
+ actions:[
+   {t:'Aplicar parâmetros do simulador',fn:()=>{ENSOMAP.usarSim=!ENSOMAP.usarSim;
+     UI.toast(ENSOMAP.usarSim?'Simulador aplicado':'Simulador desligado',
+       ENSOMAP.usarSim?'A superfície passa a refletir severidade, duração e resposta definidas em M8-06.'
+                      :'A superfície volta ao cenário de referência do trimestre.','ai');
+     MAPS.refreshENSO()}},
+   {t:'Abrir simulador',k:'btn-p',fn:()=>APP.go('M8-06')}],
+ render(){
+  setTimeout(()=>{
+    $$('#modoENSO button').forEach(b=>b.onclick=()=>{ENSOMAP.modo=b.dataset.m;MAPS.refreshENSO()});
+    $$('#triENSO button').forEach(b=>b.onclick=()=>{ENSOUI.tri=b.dataset.t;MAPS.refreshENSO()});
+  },0);
+  const st=statsENSO(), t=trimestre(ENSOUI.tri);
+  const modo=ENSO_MODOS.find(m=>m.id===ENSOMAP.modo)||ENSO_MODOS[0];
+  const rampa=[0.08,0.28,0.48,0.68,0.88].map(v=>{
+    const c=corENSO(ENSOMAP.modo==='anom'?v:-0+v,ENSOMAP.modo);
+    return 'rgb('+c[0]+','+c[1]+','+c[2]+')';
+  });
+  return `<div style="height:100%;display:flex;flex-direction:column">
+    <div style="flex:0 0 auto;padding:10px 14px 0">
+      <div class="flexr mb6">
+        <span class="eyebrow">Variável</span>
+        <span class="seg" id="modoENSO">${ENSO_MODOS.map(m=>
+          `<button data-m="${m.id}" class="${ENSOMAP.modo===m.id?'on':''}">${esc(m.nome)}</button>`).join('')}</span>
+        <span class="eyebrow" style="margin-left:10px">Trimestre</span>
+        <span class="seg" id="triENSO">${TRIMESTRES.map(x=>
+          `<button data-t="${x.id}" class="${ENSOUI.tri===x.id?'on':''}">${esc(x.id.slice(0,3))}</button>`).join('')}</span>
+        ${ENSOMAP.usarSim?UI.badge('simulador aplicado','modelado'):''}
+      </div>
+      ${kpiRow([
+        {label:'Células em impacto alto',value:st.alto,unit:'de '+st.total,sev:'critico',mark:st.alto/st.total*100,
+         desc:'índice acima de 0,62'},
+        {label:'Impacto médio nacional',value:fmt(st.media,2),sev:st.media>0.5?'critico':'alerta',mark:st.media*100},
+        {label:'Região mais afetada',value:esc(st.rhPior.split(' ')[0]),sev:'critico',plain:true,mark:88,
+         desc:'índice '+fmt(st.vPior,2)},
+        {label:'Severidade do trimestre',value:fmt(st.sev*100,0),unit:'%',sev:'alerta',mark:st.sev*80,
+         desc:esc(t.nome)},
+        {label:'Confiança do quadro',value:classeConf(convergencia(t,0.74)),sev:'atencao',plain:true,mark:70,
+         desc:'concordância '+fmt(t.conc,2)}
+      ])}
+    </div>
+    <div style="flex:1 1 auto;min-height:0;padding:0 14px 14px">
+      <div class="card h100">${mapBlock({center:[-52,-14],zoom:4,
+        layers:['LY-ENSO','LY-HYDRO','LY-SNIRH'],noWatermark:true,noLegend:true,
+        overlayBottomLeft:`<div class="map-ov ov-bl"><div class="mpanel" style="width:310px">
+          <div class="mh">${esc(modo.nome)}</div>
+          <div class="mb">
+            <div class="tiny faint mb6" style="line-height:1.4">${esc(modo.desc)}</div>
+            <div style="display:flex;height:12px;border-radius:2px;overflow:hidden;border:1px solid var(--line)">
+              ${rampa.map(c=>`<div style="flex:1;background:${c}"></div>`).join('')}
+            </div>
+            <div class="flexr tiny faint" style="margin-top:3px">
+              <span>${ENSOMAP.modo==='anom'?'déficit':'baixo'}</span>
+              <span style="margin-left:auto">${ENSOMAP.modo==='anom'?'excesso':'alto'}</span>
+            </div>
+            <hr class="hr" style="margin:7px 0">
+            <div class="tiny faint" style="line-height:1.45">
+              Grade de 1,3° interpolada por distância inversa a partir de 12 regiões.
+              O valor de cada célula é <b>interpolado</b>, não medido: clique para ver a origem.
+            </div>
+          </div></div></div>`})}</div>
+    </div></div>`;
+ }},
+
+{id:'M8-03',nome:'Sinal regional',
  obj:'Anomalia esperada por região hidrográfica, com o grau de risco e a aderência histórica do sinal. Onde o sinal é fraco, isso é declarado.',
  actions:[{t:'Propagar aos modelos',k:'btn-p',fn:()=>{UI.toast('Cenário propagado','Anomalias enviadas ao M4 como forçante sazonal.','ok');APP.go('M4-01')}}],
  render(){
@@ -5979,21 +6227,18 @@ SCREENS.M8=[
     {label:'Maior anomalia negativa',value:'−29',unit:'%',sev:'critico',mark:72,desc:'região hidrográfica Amazônica'},
     {label:'Anomalia de temperatura',value:'+1,0',unit:'°C',sev:'alerta',mark:60,desc:'média nacional projetada'}
   ])}
-  <div class="grid gA">
-    ${UI.card('Assinatura territorial do El Niño',`<div style="height:320px">${mapBlock({center:[-52,-15],zoom:4,
-      layers:['LY-HYDRO','LY-SNIRH','LY-MUN'],noWatermark:true,noLegend:true})}</div>`,{tight:true,
-      foot:srcOf('teleconexões estatísticas 1950–2025 sobre a divisão hidrográfica ANA',null,'C')})}
-    ${UI.card('Sinal por região hidrográfica',UI.table({key:'sinal8',rows:ENSO_SINAL,noTools:true,maxh:320,
-      cols:[
-        {k:'nome',t:'Região',cls:'wrap'},
-        {k:'chuva',t:'Chuva',cls:'n',get:r=>`<span class="${r.chuva<0?'up':'down'}">${r.chuva>0?'+':''}${r.chuva}%</span>`},
-        {k:'temp',t:'Temp.',cls:'n',get:r=>'+'+fmt(r.temp,1)+' °C'},
-        {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='seca'?'critico':'alerta')},
-        {k:'grau',t:'Grau',get:r=>UI.badge(r.grau,r.grau==='alto'?'critico':r.grau==='médio'?'atencao':'semdados')},
-        {k:'skill',t:'Aderência',cls:'n',get:r=>`<div style="width:60px">${UI.prog(r.skill*100,r.skill<0.6?'var(--alerta)':'var(--normal)')}</div>`},
-        {k:'conf',t:'Conf.',get:r=>badgeConf(r.conf)}
-      ]}),{tight:true,foot:srcOf('A15 · sinal histórico versus previsão atual',null,'C')})}
-  </div>
+  ${UI.card('Sinal por região hidrográfica',UI.table({key:'sinal8',rows:ENSO_SINAL,src:'A15',
+    cols:[
+      {k:'nome',t:'Região',cls:'wrap'},
+      {k:'chuva',t:'Chuva',cls:'n',get:r=>`<span class="${r.chuva<0?'up':'down'}">${r.chuva>0?'+':''}${r.chuva}%</span>`},
+      {k:'temp',t:'Temp.',cls:'n',get:r=>'+'+fmt(r.temp,1)+' °C'},
+      {k:'risco',t:'Risco',get:r=>UI.badge(r.risco,r.risco==='seca'?'critico':'alerta')},
+      {k:'grau',t:'Grau',get:r=>UI.badge(r.grau,r.grau==='alto'?'critico':r.grau==='médio'?'atencao':'semdados')},
+      {k:'skill',t:'Aderência',cls:'n',get:r=>`<div style="width:60px">${UI.prog(r.skill*100,r.skill<0.6?'var(--alerta)':'var(--normal)')}</div>`},
+      {k:'expo',t:'Exposição',cls:'n',get:r=>fmt(EXPO_RH[r.rh]||0,2)},
+      {k:'conf',t:'Conf.',get:r=>badgeConf(r.conf)},
+      {k:'nota',t:'Observação',cls:'wrap'}
+    ]}),{tight:true,foot:srcOf('A15 · sinal histórico versus previsão atual',null,'C')})}
   <div class="grid g2 mt10">
     ${UI.card('Anomalia de chuva por trimestre',CH.heat({lw:154,cw:34,ch:19,
       cols:TRIMESTRES.map(t=>t.id.slice(0,3)),
@@ -6013,7 +6258,7 @@ SCREENS.M8=[
   </div>`;
  }},
 
-{id:'M8-03',nome:'Impacto hidrológico',
+{id:'M8-04',nome:'Impacto hidrológico',
  obj:'Da anomalia climática à consequência hídrica: vazão, armazenamento e balanço entre disponibilidade e demanda outorgada.',
  actions:[{t:'Executar A08',fn:()=>AGENTS.start('A08')},{t:'Abrir reservatórios',fn:()=>APP.go('M10-01')}],
  render(){
@@ -6065,7 +6310,7 @@ SCREENS.M8=[
   </div>`;
  }},
 
-{id:'M8-04',nome:'Cadeias e gargalos',badge:['14','alerta'],
+{id:'M8-05',nome:'Cadeias e gargalos',badge:['14','alerta'],
  obj:'Onde a anomalia vira restrição concreta: captação, outorga, irrigação, uso industrial e logística, por cadeia e por região.',
  actions:[{t:'Executar A12',fn:()=>AGENTS.start('A12')},
    {t:'Abrir dossiê territorial',fn:()=>APP.go('M11-05')}],
@@ -6124,7 +6369,7 @@ SCREENS.M8=[
 <script>
 /* ---- continuação de SCREENS.M8 ---- */
 SCREENS.M8.push(
-{id:'M8-05',nome:'Custo projetado',badge:['5 dim','critico'],
+{id:'M8-06',nome:'Custo projetado',badge:['5 dim','critico'],
  obj:'Exposição projetada em cinco dimensões. A faixa estreita conforme as previsões convergem — a incerteza é exibida, não escondida.',
  actions:[{t:'Executar A15',fn:()=>AGENTS.start('A15')},
    {t:'Levar à decisão',k:'btn-p',fn:()=>{UI.toast('Encaminhado','Cenário de custo anexado à fila de decisão regulatória.','ok');APP.go('M13-01')}}],
@@ -6221,7 +6466,7 @@ SCREENS.M8.push(
   ${limitNote('Toda cifra desta tela é uma <b>estimativa de exposição</b> derivada de cenário climático probabilístico. Não é previsão de prejuízo, não constitui base de indenização e não substitui avaliação de perdas após o evento.')}`;
  }},
 
-{id:'M8-08',nome:'Preparação e gatilhos',
+{id:'M8-09',nome:'Preparação e gatilhos',
  obj:'Estágios graduais com gatilho objetivo, responsável nominal e prazo. Nenhuma ação entra sem gatilho declarado.',
  actions:[{t:'Ativar estágio',fn:()=>{UI.toast('Estágio ativado','Estágio de Alerta ativado. Órgãos parceiros notificados em modo simulado.','warn');
    BUS.emit('incident.level.changed',{},{text:'Estágio de preparação ENSO elevado para <b>Alerta</b>',sev:'alerta',mod:'M8'})}},
@@ -6272,7 +6517,7 @@ SCREENS.M8.push(
     </div></div>`;
  }},
 
-{id:'M8-09',nome:'Análogos históricos',
+{id:'M8-10',nome:'Análogos históricos',
  obj:'Eventos semelhantes, grau de similaridade, desfecho hídrico e — sobretudo — as diferenças que limitam a analogia.',
  actions:[{t:'Selecionar análogo',fn:()=>UI.toast('Análogo selecionado','2015-16 marcado como referência, com as diferenças documentadas.','ok')}],
  render(){
@@ -6405,6 +6650,9 @@ function simComparativo(){
 }
 function simUpdate(){
   const a=document.getElementById('simOut'); if(a)a.innerHTML=simResultado();
+  if(typeof ENSOMAP!=='undefined'&&ENSOMAP.usarSim&&typeof MAPS!=='undefined'){
+    try{MAPS.refreshENSO()}catch(e){}
+  }
   const b=document.getElementById('simCmp'); if(b)b.innerHTML=simComparativo();
   const c=document.getElementById('simLbl');
   if(c)c.innerHTML=`severidade ${fmt(SIM8.sev*100,0)}% · duração ${SIM8.dur} meses · resposta ${SIM8.resp} dias`
@@ -6448,8 +6696,8 @@ const PROPAG = [
   {de:'Energia',       para:'Tarifa',     mec:'Bandeira tarifária pressiona custo domiciliar', lag:'30–60 d', amp:1.3, dim:'Financeiro', ordem:2}
 ];
 
-SCREENS.M8.splice(5,0,
-{id:'M8-06',nome:'Simulador e cenários',badge:['ao vivo','info'],
+SCREENS.M8.splice(6,0,
+{id:'M8-07',nome:'Simulador e cenários',badge:['ao vivo','info'],
  obj:'Ajuste severidade, duração e antecipação da resposta e veja o custo mudar. O trade-off entre proteger pessoas e gastar dinheiro fica explícito.',
  actions:[{t:'Restaurar referência',fn:()=>{Object.assign(SIM8,{sev:1.0,dur:5,resp:30,restr:false});APP.rerender()}},
    {t:'Adotar como cenário de planejamento',k:'btn-p',fn:()=>{
@@ -6513,7 +6761,7 @@ SCREENS.M8.splice(5,0,
      foot:srcOf('M8 · cenários com os mesmos limiares e a mesma janela',null,'C')})}</div>`;
  }},
 
-{id:'M8-07',nome:'Propagação em cadeia',badge:['3ª ordem','alerta'],
+{id:'M8-08',nome:'Propagação em cadeia',badge:['3ª ordem','alerta'],
  obj:'Como o gargalo hídrico atravessa setores: mecanismo, defasagem e amplificação até virar custo.',
  actions:[{t:'Executar A12',fn:()=>AGENTS.start('A12')},
    {t:'Abrir dependências',fn:()=>APP.go('M11-03')}],
